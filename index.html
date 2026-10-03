@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RouteFly</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+
+</head>
+<body>
+  <aside id="panel">
+    <h1 class="brand"><img src="/logo.svg" alt="" width="34" height="34" /><span>Route<em>Fly</em></span></h1>
+    <label id="drop" class="drop">
+      <input id="files" type="file" multiple accept="image/*,.heic,.heif,.gpx,audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden />
+      <strong>Drop a GPX file, photos and music</strong>
+      <span>or click to choose — you can add more photos later</span>
+    </label>
+
+    <section id="info" hidden>
+      <h2 id="route-name"></h2>
+      <dl class="stats">
+        <div><dt>Distance</dt><dd id="stat-dist"></dd></div>
+        <div><dt>Climb</dt><dd id="stat-gain"></dd></div>
+        <div><dt>Duration</dt><dd id="stat-time"></dd></div>
+        <div><dt>Photos</dt><dd id="stat-photos">0</dd></div>
+      </dl>
+    </section>
+
+    <section id="photos-section" hidden>
+      <h2>Photos</h2>
+      <ul id="photo-list"></ul>
+    </section>
+
+    <section id="music-section">
+      <h2>Music</h2>
+      <ul id="music-list"></ul>
+      <p id="music-note" class="note"></p>
+      <label class="file-button">+ Add music
+        <input id="music-files" type="file" multiple accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" hidden />
+      </label>
+      <label class="settings-row">Music volume <output id="music-vol-out">80%</output>
+        <input id="music-vol" type="range" min="0" max="100" step="5" value="80" />
+      </label>
+    </section>
+
+    <section class="settings">
+      <label>Video format
+        <select id="format">
+          <option value="vertical" selected>Vertical 9:16 (phone)</option>
+          <option value="landscape">Landscape 16:9</option>
+        </select>
+      </label>
+      <label>Save as
+        <select id="save-as">
+          <option value="mp4" selected>MP4 (Instagram, WhatsApp, phones)</option>
+          <option value="webm">WebM (faster, no conversion)</option>
+        </select>
+      </label>
+      <label>Title
+        <input id="title" type="text" placeholder="Route name" />
+      </label>
+      <label>Activity
+        <select id="activity">
+          <option>Motorcycle ride</option>
+          <option>Bike ride</option>
+          <option>Car trip</option>
+          <option>Hike</option>
+          <option>Run</option>
+          <option>Walk</option>
+        </select>
+      </label>
+      <label>Rider marker
+        <select id="rider">
+          <option value="dot">Dot</option>
+          <option value="moto-gs" selected>Motorcycle (GS adventure)</option>
+          <option value="moto-pair">Two motorcycles</option>
+          <option value="car">Car</option>
+          <option value="bicycle">Bicycle</option>
+        </select>
+      </label>
+      <label>Subtitle
+        <input id="subtitle" type="text" placeholder="Shown under the title" />
+      </label>
+      <label>Profile photo <small>(optional, defaults to your first photo)</small>
+        <input id="avatar" type="file" accept="image/*,.heic,.heif" />
+      </label>
+      <label>Flight length <output id="len-out">3:00</output>
+        <input id="len" type="range" min="60" max="900" step="10" value="180" />
+      </label>
+      <label>Camera
+        <select id="cam">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+      <label>Terrain exaggeration <output id="exag-out">1.3×</output>
+        <input id="exag" type="range" min="1" max="2.5" step="0.1" value="1.3" />
+      </label>
+      <label>Photo duration <output id="photo-len-out">3.5 s</output>
+        <input id="photo-len" type="range" min="1.5" max="8" step="0.5" value="3.5" />
+      </label>
+      <label title="Only used for photos without GPS. Positive if the camera clock is ahead of real local time.">
+        Camera clock offset (h)
+        <input id="offset" type="number" step="0.5" value="0" />
+      </label>
+    </section>
+
+    <div class="buttons">
+      <button id="play" disabled>▶ Play</button>
+      <button id="stop" disabled>■ Stop</button>
+      <button id="record" class="primary" disabled>● Record video</button>
+    </div>
+    <p id="status" class="note"></p>
+  </aside>
+
+  <main>
+    <!-- The video frame: map plus the overlay canvas that is painted on top and recorded with it. -->
+    <div id="stage">
+      <div id="map"></div>
+      <canvas id="overlay"></canvas>
+    </div>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

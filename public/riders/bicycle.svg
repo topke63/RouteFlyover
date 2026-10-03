@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 124 76">
+  <!-- Bicycle, side view facing right. -->
+  <g fill="none" stroke="#0d1524" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="27" cy="52" r="20" stroke-width="4"/>
+    <circle cx="97" cy="52" r="20" stroke-width="4"/>
+    <!-- frame: chainstay, seat tube, top tube, down tube, seatstay, fork -->
+    <path d="M27 52 L56 52 L45 22 L84 22 L56 52 M27 52 L45 22 M84 22 L97 52" stroke-width="4"/>
+    <!-- saddle and handlebar -->
+    <path d="M37 16 H52 M45 22 L44 16" stroke-width="4"/>
+    <path d="M84 22 L82 12 L92 10" stroke-width="4"/>
+    <!-- crank -->
+    <circle cx="56" cy="52" r="4" stroke-width="3"/>
+    <path d="M56 52 L61 59" stroke-width="3"/>
+  </g>
+  <g fill="#0d1524"><circle cx="27" cy="52" r="2.5"/><circle cx="97" cy="52" r="2.5"/></g>
+</svg>
