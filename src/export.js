@@ -7,22 +7,37 @@
 // only works where the browser can really encode H.264 (Chrome; not Firefox on Linux).
 import { Input, BlobSource, ALL_FORMATS, Output, BufferTarget, Mp4OutputFormat, Conversion, canEncodeAudio } from 'mediabunny';
 
-export async function toMp4(blob, onStatus) {
-  const started = performance.now();
-  const ticker = setInterval(() => onStatus(`Converting to MP4… ${Math.round((performance.now() - started) / 1000)} s`), 1000);
+// onProgress(fraction 0–1, or null when unknown). Rejects with an AbortError if `signal` fires.
+export async function toMp4(blob, onProgress, signal) {
+  let res = null;
   try {
-    let res;
-    try {
-      res = await fetch('/api/mp4', { method: 'POST', body: blob });
-    } catch {
-      res = null; // no local server
-    }
-    if (res?.ok) return new Blob([await res.arrayBuffer()], { type: 'video/mp4' });
-    if (res && res.status !== 404) throw new Error(await res.text());
-  } finally {
-    clearInterval(ticker);
+    res = await fetch('/api/mp4', { method: 'POST', body: blob, signal });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    // No local server (static hosting): fall through to the browser.
   }
-  return toMp4InBrowser(blob, (p) => onStatus(`Converting to MP4… ${Math.round(p * 100)}%`));
+  if (res?.ok) return convertOnServer((await res.json()).id, onProgress, signal);
+  if (res && res.status !== 404) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return toMp4InBrowser(blob, onProgress);
+}
+
+async function convertOnServer(id, onProgress, signal) {
+  const cancel = () => fetch(`/api/mp4/${id}`, { method: 'DELETE' });
+  signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 500));
+      signal?.throwIfAborted();
+      const status = await (await fetch(`/api/mp4/${id}`)).json();
+      if (status.error) throw new Error(status.error);
+      onProgress(status.progress);
+      if (status.done) break;
+    }
+    const file = await fetch(`/api/mp4/${id}/file`, { signal });
+    return new Blob([await file.arrayBuffer()], { type: 'video/mp4' });
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 
 async function toMp4InBrowser(blob, onProgress) {

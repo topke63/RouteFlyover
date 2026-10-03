@@ -1,8 +1,11 @@
-import fixWebmDuration from 'fix-webm-duration';
-
-// Records the map canvas with the overlay canvas (HUD, photos) on top into a video file.
+// Frame-by-frame video encoder: each call to frame() composites the map canvas and the
+// overlay canvas and encodes them as the next frame, stamped at exactly frame / FPS seconds.
+// Rendering can take as long as it needs (waiting for map tiles, slow machines) — the
+// video still plays back smoothly at FPS with the exact length of the animation timeline.
 // Requires the map to be created with preserveDrawingBuffer: true.
-const MIME_TYPES = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'];
+import { Output, BufferTarget, WebMOutputFormat, CanvasSource } from 'mediabunny';
+
+export const FPS = 30;
 
 export class Recorder {
   constructor(source, overlay) {
@@ -12,56 +15,34 @@ export class Recorder {
     this.ctx = this.canvas.getContext('2d');
   }
 
-  start(fps = 30) {
+  async start() {
     // Encoders want even dimensions.
     this.canvas.width = this.source.width & ~1;
     this.canvas.height = this.source.height & ~1;
-    this.mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t)) || '';
-    this.chunks = [];
-    this.rec = new MediaRecorder(this.canvas.captureStream(fps), {
-      mimeType: this.mimeType || undefined,
-      videoBitsPerSecond: 10e6,
-    });
-    this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
-    this.rec.start(1000);
-    this.activeMs = 0;
-    this.since = performance.now();
+    this.output = new Output({ format: new WebMOutputFormat(), target: new BufferTarget() });
+    // VP8: encodes faster than real time at 1080p in every browser; the MP4 export
+    // re-encodes to H.264 anyway, so the generous bitrate keeps this intermediate clean.
+    this.video = new CanvasSource(this.canvas, { codec: 'vp8', bitrate: 16e6, keyFrameInterval: 2 });
+    this.output.addVideoTrack(this.video, { frameRate: FPS });
+    await this.output.start();
+    this.frames = 0;
   }
 
-  get paused() {
-    return this.rec.state === 'paused';
-  }
-
-  // Pausing leaves no gap in the output: used while waiting for map tiles.
-  pause() {
-    if (this.rec.state !== 'recording') return;
-    this.rec.pause();
-    this.activeMs += performance.now() - this.since;
-  }
-
-  resume() {
-    if (this.rec.state !== 'paused') return;
-    this.rec.resume();
-    this.since = performance.now();
-  }
-
-  frame() {
+  // Resolves when the encoder is ready for the next frame.
+  async frame() {
     const { ctx, canvas } = this;
     ctx.drawImage(this.source, 0, 0, canvas.width, canvas.height);
     ctx.drawImage(this.overlay, 0, 0, canvas.width, canvas.height);
+    await this.video.add(this.frames / FPS, 1 / FPS);
+    this.frames++;
   }
 
-  stop() {
-    if (this.rec.state === 'recording') this.activeMs += performance.now() - this.since;
-    return new Promise((resolve) => {
-      this.rec.onstop = async () => {
-        const type = this.rec.mimeType || 'video/webm';
-        let blob = new Blob(this.chunks, { type });
-        // MediaRecorder's WebM has no duration header, which breaks seeking in players.
-        if (type.includes('webm')) blob = await fixWebmDuration(blob, this.activeMs, { logger: false });
-        resolve({ blob, ext: type.includes('mp4') ? 'mp4' : 'webm' });
-      };
-      this.rec.stop();
-    });
+  async stop() {
+    await this.output.finalize();
+    return { blob: new Blob([this.output.target.buffer], { type: 'video/webm' }), ext: 'webm' };
+  }
+
+  cancel() {
+    this.output.cancel();
   }
 }

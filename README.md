@@ -6,7 +6,7 @@ RouteFly is a personal web app that runs on your own computer. Drop in a GPX fil
 ride, hike or drive, add the photos you took along the way and a few songs, and it flies a
 camera along your route over satellite imagery and real 3D terrain. It stops at every photo,
 shows live distance / time / climb, ends with a zoom-out to the curve of the Earth and a
-statistics card, and records the whole thing as a video ready for Instagram, WhatsApp or
+statistics card, and renders the whole thing as a video ready for Instagram, WhatsApp or
 your phone.
 
 Nothing is uploaded anywhere: your GPX, photos, music and the finished video stay on your
@@ -47,15 +47,19 @@ machine. The only network traffic is fetching public map tiles.
 - Intro card with a route mini-map, headline stats, title and subtitle, then the camera
   dives in.
 - High chase camera that follows the route smoothly, with the ridden part of the trail drawn
-  behind a rider marker: a dot, a motorcycle (GS-style adventure bike), two motorcycles, a car
-  or a bicycle — always facing the direction of travel.
+  behind a rider marker: a dot, or a small 3D model — car with roof luggage, GS-style adventure
+  motorcycle, two motorcycles or a bicycle — that turns with the road and is seen in
+  perspective, just like the map.
 - Photo pins along the route; at each one the flight pauses and the photo is shown as a print
   with time and distance.
 - Bottom card with your profile picture, live distance / time / climb and the elevation profile.
 - Closing zoom-out to the whole route and a summary card with the trip statistics.
 - Background music: several songs played in order with crossfades, cut to the video length
   with a smooth fade-out — always at normal speed.
-- Saves MP4 (H.264 + AAC, constant 30 fps — what Instagram and WhatsApp want) or WebM.
+- Frame-by-frame rendering with a progress bar: the video is always perfectly smooth at
+  30 fps and exactly as long as the timeline, however fast your computer or connection is.
+- Preview the finished video in the app, then save it as MP4 (H.264 + AAC, constant 30 fps —
+  what Instagram and WhatsApp want) or WebM.
 
 **Photos**
 - JPEG, PNG, WebP and iPhone HEIC/HEIF.
@@ -71,7 +75,7 @@ machine. The only network traffic is fetching public map tiles.
 |---|---|---|
 | **Node.js** | 20.19+ or 22.12+ (tested with 26) | runs the local app server (Vite) |
 | **npm** | comes with Node.js | installs dependencies |
-| **ffmpeg** with `libx264` and `aac` | any recent version (tested with 9.0) | converts recordings to MP4 — only needed for the MP4 option |
+| **ffmpeg** with `libx264` and `aac` | any recent version (tested with 9.0) | converts rendered videos to MP4 — only needed for the MP4 option |
 | **Browser** | current Firefox or Chrome/Chromium | runs the app; needs WebGL 2 |
 | **Graphics** | any GPU with working WebGL 2 | 3D map rendering |
 | **Internet** | while using the app | satellite imagery, terrain and place names are streamed |
@@ -166,12 +170,17 @@ npm run preview    # serves dist/ on http://localhost:4173, including MP4 conver
    photo, flight length, camera height and so on (see below).
 5. **Preview** with **▶ Play**. Pause any time; click the elevation profile in the frame to
    jump. Music plays along in the preview.
-6. **Record** with **● Record video**. Keep the tab visible and the window open until the
-   *Saved …* message appears; the video is then downloaded like any other file.
+6. **Render** with **🎬 Render video**. A progress bar shows each stage — *Rendering frames*,
+   *Adding music*, *Converting to MP4* — with the elapsed time and an estimate of the time
+   left. Keep the tab visible while it renders; **Cancel** stops it at any point.
+7. **Watch and save.** The finished video appears in the sidebar with a player, its file
+   name and size. Click **💾 Save video**: Chrome asks where to save it; Firefox saves it
+   through its normal download (to your Downloads folder, or asks, depending on your Firefox
+   settings). **Discard** throws it away.
 
-A recording takes longer than the video it produces, because RouteFly waits whenever map
-imagery is still loading so that every frame is sharp — the waiting never shows up in the
-video. Expect roughly 1.5–2× the video length, plus a short MP4 conversion at the end.
+Rendering takes longer than the video it produces, because every frame waits until the map
+imagery is sharp — the waiting never shows up in the video. Expect roughly 1.5–2× the video
+length, plus a short MP4 conversion at the end.
 
 A small sample route is included in `samples/` to try things out.
 
@@ -185,7 +194,7 @@ A small sample route is included in `samples/` to try things out.
 | **Video format** | *Vertical 9:16* (1080×1920) or *Landscape 16:9* (1920×1080). The preview frame matches. |
 | **Title** | Big headline in the intro and on the summary card. Defaults to the GPX track name. |
 | **Activity** | Used in the default subtitle and to pick a matching rider marker. |
-| **Rider marker** | Dot, motorcycle (GS-style adventure bike), two motorcycles, car or bicycle. |
+| **Rider marker** | Dot, or a 3D car, motorcycle (GS-style adventure bike), two motorcycles or bicycle. |
 | **Subtitle** | Line under the title. Defaults to *activity · date*. |
 | **Profile photo** | Picture in the round avatar. Defaults to your first placed photo. |
 | **Flight length** | How long the flight along the route takes (1–15 min). Set automatically from the route length; photo stops, intro and ending come on top. |
@@ -214,13 +223,20 @@ one photo duration per photo + zoom-out (5 s) + summary (7 s).
 - Songs play in the order you added them, at normal speed, with 2-second crossfades.
 - If the music is longer than the video, it's cut and faded out over the last ~4 seconds.
 - If it's shorter, the playlist starts again from the first song.
-- The recording itself is made silently; once it's finished and its exact length is known,
+- The video itself is rendered silently; once it's finished and its exact length is known,
   the soundtrack is rendered to exactly that length and added to the file (the video is copied,
   not re-compressed). This keeps music and picture perfectly in sync.
 
+### Rendering
+RouteFly doesn't film the screen. It advances the animation by exactly 1/30 s, waits until
+the map has loaded everything for that moment, draws the map and the overlay, and encodes
+that picture as the next frame (VP8, via WebCodecs). Each frame is stamped with its exact
+time, so the video is perfectly smooth and exactly as long as the timeline — slow tiles or a
+slow computer only make rendering take longer.
+
 ### MP4 export
-The browser records WebM (Firefox) or MP4 (Chrome). With *Save as MP4*, the finished file is
-sent to the local RouteFly server, which runs:
+Rendering produces WebM. With *Save as MP4*, the finished file is sent to the local RouteFly
+server, which converts it with ffmpeg (reporting real progress) using:
 
 ```
 ffmpeg -i input -c:v libx264 -preset medium -crf 21 -maxrate 12M -bufsize 24M \
@@ -233,8 +249,8 @@ and returns the MP4. The data only travels between your browser and your own com
 ### Map loading
 Satellite imagery and terrain are streamed while you fly. To keep frames sharp, RouteFly
 limits detail to what the camera can show, spreads requests over two server hostnames,
-prefetches the stretch of route ahead of the camera, and pauses the recording while tiles are
-still loading.
+prefetches the stretch of route ahead of the camera, and — when rendering — waits for
+missing tiles before drawing each frame.
 
 ### Statistics
 - *Climb/descent* ignore elevation changes under 3 m (GPS noise).
@@ -265,7 +281,7 @@ Videos from your phone (`.MP4`, `.MOV`) aren't used yet and are listed as such.
 - **Longer flights look better.** Around 0.6 s per km is a good start; very fast flights give
   the map less time to load.
 - **Higher camera = smoother, sharper video**, especially on long routes.
-- **Close other heavy tabs** while recording, and keep the RouteFly tab visible — browsers slow
+- **Close other heavy tabs** while rendering, and keep the RouteFly tab visible — browsers slow
   down hidden tabs.
 - **Instagram Reels:** vertical format, MP4.
 
@@ -277,7 +293,7 @@ Videos from your phone (`.MP4`, `.MOV`) aren't used yet and are listed as such.
 in Firefox see `about:support` → *Graphics*; in Chrome `chrome://gpu`.
 
 **"Graphics context lost — reload the page."** The GPU ran out of memory or reset. Reload the
-page; if it happens during recordings, close other GPU-heavy apps or use the *high* camera.
+page; if it happens while rendering, close other GPU-heavy apps or use the *high* camera.
 
 **A photo says "No GPS or date in the file".** It's probably a converted copy. Use the
 original from your phone or camera.
@@ -295,7 +311,7 @@ ffmpeg -i video.webm -c:v libx264 -crf 21 -pix_fmt yuv420p -r 30 -c:a aac -movfl
 **HEIC photos fail to load.** Very unusual HEIC variants may not decode; export them as JPEG
 from your phone or photo app (keeping location data).
 
-**Recording takes very long.** That's the app waiting for map imagery. A slow connection or a
+**Rendering takes very long.** That's the app waiting for map imagery. A slow connection or a
 very long, fast flight makes it slower; try the *high* camera or a longer flight length.
 
 ---
@@ -307,28 +323,27 @@ RouteFly/
 ├── index.html          page layout: sidebar controls and the video stage
 ├── vite.config.js      dev/preview server, including the local ffmpeg MP4 endpoint
 ├── public/
-│   ├── logo.svg        RouteFly logo
-│   └── riders/         rider marker drawings (motorcycle, two motorcycles, car, bicycle)
+│   └── logo.svg        RouteFly logo
 ├── samples/            small demo route and photos
 └── src/
-    ├── main.js         app: map, loading, camera, animation timeline, recording flow
+    ├── main.js         app: map, loading, camera, animation timeline, render flow
     ├── overlay.js      everything drawn over the map (intro, HUD, pins, photos, summary)
     ├── gpx.js          GPX parsing and position/elevation along the route
     ├── photos.js       photo reading (EXIF, HEIC) and placement on the route
     ├── music.js        playlist preview, offline soundtrack rendering and muxing
-    ├── recorder.js     canvas + overlay → video recording
+    ├── recorder.js     frame-by-frame video encoder (map + overlay → WebM)
     ├── export.js       MP4 conversion (local ffmpeg, in-browser fallback)
     ├── prefetch.js     map tile prefetching ahead of the camera
     ├── minimap.js      route mini-map for the intro card
+    ├── vehicles.js     low-poly 3D rider markers (car, motorcycles, bicycle), rendered with three.js
     ├── stats.js        trip statistics
     ├── geo.js          small geodesy helpers
     └── style.css       sidebar and stage styling
 ```
 
-Built with [MapLibre GL JS](https://maplibre.org), [Vite](https://vite.dev),
+Built with [MapLibre GL JS](https://maplibre.org), [three.js](https://threejs.org), [Vite](https://vite.dev),
 [Mediabunny](https://mediabunny.dev), [exifr](https://github.com/MikeKovarik/exifr),
-[heic-to](https://github.com/hoppergee/heic-to) and
-[fix-webm-duration](https://github.com/yusitnikov/fix-webm-duration).
+and [heic-to](https://github.com/hoppergee/heic-to).
 
 ---
 
@@ -345,7 +360,7 @@ commercially.
 | Place names | © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, served by [OpenFreeMap](https://openfreemap.org) |
 | Font | [Montserrat](https://github.com/JulietaUla/Montserrat), SIL Open Font License 1.1 |
 
-The motorcycle marker is a generic adventure-bike drawing in the style of a BMW R 1200 GS; it
+The motorcycle marker is a generic low-poly adventure bike in the style of a BMW R 1200 GS; it
 carries no manufacturer logo. BMW and GS are trademarks of their respective owner.
 
 ---
@@ -362,7 +377,7 @@ RouteFly is distributed in the hope that it will be useful, but WITHOUT ANY WARR
 even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 [LICENSE](LICENSE) file for the full text.
 
-Third-party libraries keep their own licenses (MapLibre GL JS: BSD-3-Clause; Mediabunny:
+Third-party libraries keep their own licenses (MapLibre GL JS: BSD-3-Clause; three.js: MIT; Mediabunny:
 MPL-2.0; @mediabunny/aac-encoder: MPL-2.0, bundling an FFmpeg build under the LGPL; heic-to:
 LGPL-3.0, based on libheif;
-exifr and fix-webm-duration: MIT; Montserrat: OFL-1.1), all compatible with GPL-3.0.
+exifr: MIT; Montserrat: OFL-1.1), all compatible with GPL-3.0.

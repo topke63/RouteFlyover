@@ -13,11 +13,12 @@ import { parseGpx, pointAt } from './gpx.js';
 import { readPhotos, placePhotos, photoKey } from './photos.js';
 import { tripStats, fmtKm, fmtDuration } from './stats.js';
 import { bearing, destination, haversine, lerpAngle } from './geo.js';
-import { Recorder } from './recorder.js';
+import { Recorder, FPS } from './recorder.js';
 import { TilePrefetcher } from './prefetch.js';
 import { drawOverlay, profileRect, pinHeads, ACCENT, km, hm } from './overlay.js';
 import { renderMinimap } from './minimap.js';
 import { Music, AUDIO_FILE, addSoundtrack } from './music.js';
+import { VehicleRenderer } from './vehicles.js';
 import { toMp4 } from './export.js';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -63,18 +64,15 @@ const LIVE_SLOW_PACE = 0.5;     // live playback speed factor while tiles are lo
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  files: $('files'), play: $('play'), stop: $('stop'), record: $('record'),
+  files: $('files'), play: $('play'), stop: $('stop'), render: $('render'),
   len: $('len'), cam: $('cam'), exag: $('exag'), photoLen: $('photo-len'), offset: $('offset'),
   format: $('format'), title: $('title'), subtitle: $('subtitle'), activity: $('activity'), avatar: $('avatar'),
   status: $('status'), stage: $('stage'), overlay: $('overlay'),
   musicFiles: $('music-files'), musicVol: $('music-vol'), saveAs: $('save-as'), rider: $('rider'),
 };
-// Vehicle badges for the position marker (side views facing right).
-const RIDERS = Object.fromEntries(['car', 'moto-gs', 'moto-pair', 'bicycle'].map((name) => {
-  const img = new Image();
-  img.src = `/riders/${name}.svg`;
-  return [name, img];
-}));
+// 3D vehicle shown at the rider's position (unless the plain dot is chosen).
+const vehicles = new VehicleRenderer();
+const VEHICLE_SIZE = 240; // design units (the frame's short side is 1080)
 const ACTIVITY_RIDER = { 'Motorcycle ride': 'moto-gs', 'Bike ride': 'bicycle', 'Car trip': 'car' };
 const music = new Music();
 const octx = ui.overlay.getContext('2d');
@@ -135,7 +133,7 @@ const prefetcher = new TilePrefetcher([
 map.on('webglcontextlost', async () => {
   const recording = !!anim?.recorder;
   if (anim) await endAnimation();
-  setStatus(`Graphics context lost — reload the page.${recording ? ' The video so far was saved.' : ''}`);
+  setStatus(`Graphics context lost — reload the page.${recording ? ' The video rendered so far is below.' : ''}`);
 });
 
 map.on('load', () => {
@@ -307,7 +305,7 @@ function showTrack() {
   $('stat-dist').textContent = fmtKm(track.total);
   $('stat-gain').textContent = `${Math.round(track.gain)} m`;
   $('stat-time').textContent = track.duration ? fmtDuration(track.duration) : '—';
-  for (const b of [ui.play, ui.stop, ui.record]) b.disabled = false;
+  for (const b of [ui.play, ui.stop, ui.render]) b.disabled = false;
 }
 
 function refreshPhotos() {
@@ -417,17 +415,19 @@ async function startAnimation({ record = false } = {}) {
   stopAnimation();
   viewer = null;
   await fontsLoaded;
-  const start = pointAt(track, 0);
   const brg = routeBearing(0);
 
   anim = {
     phase: 'intro', phaseStart: 0, clock: 0, last: 0,
-    d: 0, brg, cam: CAMERAS[ui.cam.value], camAlt: null, pace: 1,
-    nextPhoto: 0, photo: null, wait: null, paused: false, dove: false,
+    d: 0, brg, heading: travelHeading(0), cam: CAMERAS[ui.cam.value], camAlt: null, pace: 1,
+    nextPhoto: 0, photo: null, wait: null, paused: false,
     speed: track.total / parseFloat(ui.len.value),
     photoMs: parseFloat(ui.photoLen.value) * 1000,
     recorder: null,
   };
+  // Length of the whole timeline on the animation clock; drives the render progress bar.
+  anim.totalMs = INTRO_CARD_MS + DIVE_MS + (track.total / anim.speed) * 1000
+    + photos.length * anim.photoMs + OUTRO_MS + SUMMARY_MS;
   setProgress(0);
   prefetcher.clear();
   prefetcher.around(track, 0, anim.speed * PREFETCH_AHEAD[1]);
@@ -439,24 +439,27 @@ async function startAnimation({ record = false } = {}) {
   ui.play.textContent = '❚❚ Pause';
 
   // Title card over a gently tilted view of the start.
-  map.jumpTo({ center: start.lngLat, zoom: 11.3, pitch: 35, bearing: brg });
-  // Recordings are made silently; the music is added once the video's length is known.
-  if (!record) music.start();
+  anim.introCam = { center: pointAt(track, 0).lngLat, zoom: 11.3, pitch: 35, bearing: brg };
+  map.jumpTo(anim.introCam);
+
+  const run = anim;
   if (record) {
+    // Frame by frame at a fixed time step, as fast as tiles and the encoder allow.
     setRecordingResolution(true);
     anim.recorder = new Recorder(map.getCanvas(), ui.overlay);
-    anim.recorder.start();
+    await anim.recorder.start();
     holdFor(START_TILE_WAIT);
-    setStatus(`Recording… keep this tab visible.${music.songs.length ? ' Music is added when it finishes.' : ''}`);
+    setStatus('Keep this tab visible while rendering.');
+    renderFrames(run);
+  } else {
+    // Live preview in real time; the music plays along.
+    music.start();
+    requestAnimationFrame(function loop(now) {
+      if (anim !== run) return;
+      tick(now);
+      if (anim === run) requestAnimationFrame(loop);
+    });
   }
-
-  // Each run owns its frame loop; it ends once a newer run (or none) replaces it.
-  const run = anim;
-  requestAnimationFrame(function loop(now) {
-    if (anim !== run) return;
-    tick(now);
-    if (anim === run) requestAnimationFrame(loop);
-  });
 }
 
 function paddedBounds([[w, s], [e, n]], factor) {
@@ -469,25 +472,57 @@ function setPhase(phase) {
   anim.phaseStart = anim.clock;
 }
 
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+// Render loop: capture the current state as one frame, then advance the timeline by exactly
+// one frame's worth. Waiting for tiles or the encoder only slows rendering, never the video.
+async function renderFrames(run) {
+  const frameMs = 1000 / FPS;
+  for (;;) {
+    await nextFrame(); // lets MapLibre load and place tiles in between
+    if (anim !== run) return;
+    if (holdForTiles(performance.now())) continue;
+    map.redraw();
+    renderOverlay(performance.now());
+    await run.recorder.frame();
+    if (anim !== run) return;
+    renderProgress('frames', anim.clock / anim.totalMs);
+    if (step(frameMs) === 'done') {
+      endAnimation();
+      return;
+    }
+  }
+}
+
+// Live preview: advance by real elapsed time.
 function tick(now) {
   const realDt = anim.last ? Math.min(100, now - anim.last) : 0;
   anim.last = now;
-  // The animation runs on its own clock, which stops while paused or waiting for tiles.
   const holding = holdForTiles(now);
   const dtMs = anim.paused || holding ? 0 : realDt;
-  anim.clock += dtMs;
   music.setRunning(!anim.paused && !holding);
   music.update();
+  if (step(dtMs) === 'done') {
+    endAnimation();
+    return;
+  }
+  renderOverlay(now);
+}
+
+// Advance the timeline by dtMs: camera, trail, phases. Returns 'done' at the very end.
+function step(dtMs) {
+  anim.clock += dtMs;
   const dt = dtMs / 1000;
   const t = anim.clock - anim.phaseStart;
 
   switch (anim.phase) {
     case 'intro':
-      if (!anim.dove && t >= INTRO_CARD_MS) {
-        anim.dove = true;
-        map.flyTo({ ...chaseCamera(pointAt(track, 0), anim.brg), duration: DIVE_MS, essential: true });
+      // Hold on the title card, then dive into the chase camera at the start.
+      if (t >= INTRO_CARD_MS) {
+        anim.diveTo ??= chaseCamera(pointAt(track, 0), anim.brg);
+        map.jumpTo(lerpCamera(anim.introCam, anim.diveTo, easeInOut((t - INTRO_CARD_MS) / DIVE_MS)));
       }
-      if (anim.dove && t >= INTRO_CARD_MS + DIVE_MS) setPhase('fly');
+      if (t >= INTRO_CARD_MS + DIVE_MS) setPhase('fly');
       break;
     case 'fly':
       if (dt) fly(dt);
@@ -500,27 +535,39 @@ function tick(now) {
       }
       break;
     case 'outro':
+      map.jumpTo(lerpCamera(anim.outroFrom, anim.outroTo, easeInOut(t / (OUTRO_MS - 500))));
       if (t >= OUTRO_MS) {
         setPhase('summary');
         music.fadeOut(MUSIC_FADE.duration, MUSIC_FADE.delay);
       }
       break;
     case 'summary':
-      if (t >= SUMMARY_MS) {
-        endAnimation();
-        return;
-      }
+      if (t >= SUMMARY_MS) return 'done';
       break;
   }
-
   if (anim.phase === 'fly' || anim.phase === 'photo') setProgress(anim.d);
-  renderOverlay(now);
-  if (!holding) anim.recorder?.frame();
+  return null;
+}
+
+const easeInOut = (v) => {
+  const x = Math.max(0, Math.min(1, v));
+  return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+};
+
+// Camera in between two camera states (center, zoom, pitch, bearing) at k ∈ [0, 1].
+function lerpCamera(a, b, k) {
+  const ca = maplibregl.LngLat.convert(a.center), cb = maplibregl.LngLat.convert(b.center);
+  return {
+    center: [ca.lng + (cb.lng - ca.lng) * k, ca.lat + (cb.lat - ca.lat) * k],
+    zoom: a.zoom + (b.zoom - a.zoom) * k,
+    pitch: a.pitch + (b.pitch - a.pitch) * k,
+    bearing: lerpAngle(a.bearing, b.bearing, k),
+  };
 }
 
 function fly(dt) {
   const next = photos[anim.nextPhoto];
-  // Live playback eases off while imagery is still loading; recordings hold instead.
+  // Live playback eases off while imagery is still loading; renders wait instead.
   const ready = anim.recorder || map.areTilesLoaded();
   anim.pace += ((ready ? 1 : LIVE_SLOW_PACE) - anim.pace) * (1 - Math.exp(-dt * 2));
   anim.d = Math.min(track.total, anim.d + anim.speed * anim.pace * dt);
@@ -531,6 +578,8 @@ function fly(dt) {
     setPhase('photo');
   }
   followCamera(dt);
+  // The vehicle turns with the road, a little smoothed so GPS jitter doesn't shake it.
+  anim.heading = lerpAngle(anim.heading, travelHeading(anim.d), 1 - Math.exp(-dt * 6));
   // Keep a window of upcoming route warm; extend it in chunks rather than every frame.
   const aheadTo = anim.d + anim.speed * PREFETCH_AHEAD[1];
   if (aheadTo - anim.prefetchedTo > 1000) {
@@ -540,21 +589,18 @@ function fly(dt) {
   if (anim.phase === 'fly' && anim.d >= track.total) startOutro();
 }
 
-// Hold the animation until the map has loaded: always after a jump or at the start of a
-// recording, and while recording, where the recorder pauses too so the wait never shows
-// up in the video. Only possible while the app drives the camera frame by frame.
+// Hold the animation until the map has loaded: after a jump or at the start of a render,
+// and during a render whenever tiles are still missing (rendering just takes longer).
 function holdForTiles(now) {
   const ready = map.areTilesLoaded();
   if (anim.wait) {
     if (!ready && now - anim.wait.start < anim.wait.max) return true;
-    // Some far-off tile may never settle; after a timed-out wait, fly a little before holding again.
+    // Some far-off tile may never settle; after a timed-out wait, move on a little before holding again.
     if (!ready) anim.noWaitUntil = now + 500;
     anim.wait = null;
-    anim.recorder?.resume();
     return false;
   }
-  const steerable = anim.phase === 'fly' || (anim.phase === 'intro' && !anim.dove);
-  if (anim.recorder && steerable && !ready && now >= (anim.noWaitUntil ?? 0)) {
+  if (anim.recorder && !ready && now >= (anim.noWaitUntil ?? 0)) {
     holdFor(RECORD_TILE_WAIT, now);
     return true;
   }
@@ -563,7 +609,13 @@ function holdForTiles(now) {
 
 function holdFor(ms, now = performance.now()) {
   anim.wait = { start: now, max: ms };
-  anim.recorder?.pause();
+}
+
+// Direction of travel at distance d, looking a short way ahead (scaled with flight speed).
+function travelHeading(d) {
+  const ahead = Math.min(3000, Math.max(120, (anim?.speed ?? 2000) * 0.35));
+  const a = pointAt(track, Math.max(0, Math.min(d, track.total - ahead))), b = pointAt(track, Math.min(track.total, d + ahead));
+  return b.d > a.d + 1 ? bearing(a.lngLat, b.lngLat) : (anim?.heading ?? 0);
 }
 
 // General heading of the route from distance d: far enough ahead to ignore wiggles.
@@ -601,14 +653,8 @@ function startOutro() {
   setPhase('outro');
   setProgress(track.total);
   const fit = map.cameraForBounds(track.bounds, { padding: 40, bearing: anim.brg });
-  map.flyTo({
-    center: fit.center,
-    zoom: Math.min(fit.zoom - 1, 8.5),
-    pitch: 64,
-    bearing: anim.brg,
-    duration: OUTRO_MS - 500,
-    essential: true,
-  });
+  anim.outroFrom = { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
+  anim.outroTo = { center: fit.center, zoom: Math.min(fit.zoom - 1, 8.5), pitch: 64, bearing: anim.brg };
 }
 
 async function endAnimation() {
@@ -616,39 +662,9 @@ async function endAnimation() {
   const rec = anim.recorder;
   anim = null;
   ui.play.textContent = '▶ Play';
-  if (rec) {
-    setStatus('Finalizing video…');
-    let { blob, ext } = await rec.stop();
-    setRecordingResolution(false);
-    let note = '';
-    if (music.songs.length) {
-      setStatus('Adding music…');
-      try {
-        ({ blob } = await addSoundtrack(blob, music));
-      } catch (err) {
-        console.error(err);
-        note = ` Couldn't add the music (${err.message}), so the video is silent.`;
-      }
-    }
-    if (ui.saveAs.value === 'mp4') {
-      setStatus('Converting to MP4…');
-      try {
-        blob = await toMp4(blob, setStatus);
-      } catch (err) {
-        console.error(err);
-        note += ` Couldn't convert to MP4 (${err.message}), so it was saved as ${ext.toUpperCase()}.`;
-      }
-    }
-    ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${(ui.title.value || track.name).replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'route'}.${ext}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10e3);
-    setStatus(`Saved ${a.download} (${(blob.size / 1e6).toFixed(1)} MB).${note}`);
-  }
   music.stop();
   renderOverlay(performance.now());
+  if (rec) await finishRender(rec);
 }
 
 function stopAnimation() {
@@ -656,9 +672,9 @@ function stopAnimation() {
   const rec = anim.recorder;
   anim = null;
   if (rec) {
-    rec.stop();
+    rec.cancel();
     setRecordingResolution(false);
-    setStatus('Recording cancelled.');
+    cancelRender();
   }
   prefetcher.clear();
   // Quick fade rather than cutting the music off mid-note.
@@ -686,6 +702,147 @@ function setProgress(d) {
     map.getSource('trail').setData(asLine(track.coords.slice(0, i + 1)));
   }
   map.getSource('trail-head').setData(asLine([...track.coords.slice(trailDone, i + 1), here.lngLat]));
+}
+
+// ---------- Rendering ----------
+
+// Share of the progress bar each stage takes (only the stages that run are counted).
+const STAGES = {
+  frames: { label: 'Rendering frames', weight: 0.8 },
+  music: { label: 'Adding music', weight: 0.03 },
+  mp4: { label: 'Converting to MP4', weight: 0.17 },
+};
+let render = null; // { started, stages, abort }
+let result = null; // { blob, name, url }
+
+function startRender() {
+  clearResult();
+  render = {
+    started: performance.now(),
+    stages: ['frames', ...(music.songs.length ? ['music'] : []), ...(ui.saveAs.value === 'mp4' ? ['mp4'] : [])],
+    abort: new AbortController(),
+  };
+  $('render-box').hidden = false;
+  for (const b of [ui.play, ui.render]) b.disabled = true;
+  renderProgress('frames', 0);
+  startAnimation({ record: true });
+}
+
+// Progress of one stage (0–1, or null if unknown) → overall bar, percentage and time left.
+function renderProgress(stage, fraction) {
+  if (!render) return;
+  const total = render.stages.reduce((sum, st) => sum + STAGES[st].weight, 0);
+  let before = 0;
+  for (const st of render.stages) {
+    if (st === stage) break;
+    before += STAGES[st].weight;
+  }
+  const overall = Math.min(1, (before + STAGES[stage].weight * Math.min(1, fraction ?? 0)) / total);
+  const elapsed = (performance.now() - render.started) / 1000;
+  $('render-stage').textContent = `${STAGES[stage].label}…`;
+  $('render-pct').textContent = `${Math.floor(overall * 100)}%`;
+  $('render-bar').value = overall;
+  $('render-time').textContent = overall > 0.03
+    ? `${mmss(elapsed)} elapsed · about ${mmss((elapsed * (1 - overall)) / overall)} left`
+    : `${mmss(elapsed)} elapsed`;
+}
+
+// After the frames: add the music, convert, then offer the file.
+async function finishRender(rec) {
+  const { signal } = render.abort;
+  const { stages, started } = render;
+  const notes = [];
+  try {
+    renderProgress('frames', 1);
+    let { blob } = await rec.stop();
+    setRecordingResolution(false);
+    if (signal.aborted) return;
+    if (stages.includes('music')) {
+      renderProgress('music', 0);
+      try {
+        ({ blob } = await addSoundtrack(blob, music));
+      } catch (err) {
+        console.error(err);
+        notes.push(`Couldn't add the music (${err.message}), so the video is silent.`);
+      }
+      if (signal.aborted) return;
+    }
+    if (stages.includes('mp4')) {
+      renderProgress('mp4', 0);
+      try {
+        blob = await toMp4(blob, (p) => renderProgress('mp4', p), signal);
+      } catch (err) {
+        if (signal.aborted) return;
+        console.error(err);
+        notes.push(`Couldn't convert to MP4 (${err.message}), so it's WebM.`);
+      }
+    }
+    if (signal.aborted) return;
+    const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+    const name = `${(ui.title.value || track.name).replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'route'}.${ext}`;
+    showResult(blob, name, (performance.now() - started) / 1000, notes);
+  } finally {
+    if (!signal.aborted) endRender();
+  }
+}
+
+function cancelRender() {
+  if (!render) return;
+  render.abort.abort();
+  endRender();
+  setStatus('Render cancelled.');
+}
+
+function endRender() {
+  render = null;
+  $('render-box').hidden = true;
+  for (const b of [ui.play, ui.render]) b.disabled = !track;
+}
+
+function showResult(blob, name, seconds, notes) {
+  clearResult();
+  result = { blob, name, url: URL.createObjectURL(blob) };
+  const video = $('result-video');
+  video.src = result.url;
+  $('result-info').textContent = `${name} · ${(blob.size / 1e6).toFixed(1)} MB · rendered in ${mmss(seconds)}${notes.length ? ` · ${notes.join(' ')}` : ''}`;
+  $('result-box').hidden = false;
+  setStatus('');
+}
+
+function clearResult() {
+  if (!result) return;
+  $('result-video').removeAttribute('src');
+  $('result-video').load();
+  URL.revokeObjectURL(result.url);
+  result = null;
+  $('result-box').hidden = true;
+}
+
+// A real "Save as" dialog where the browser has one (Chrome); otherwise a normal download.
+async function saveResult() {
+  if (!result) return;
+  const { blob, name } = result;
+  if (window.showSaveFilePicker) {
+    try {
+      const ext = name.split('.').pop();
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: 'Video', accept: { [blob.type]: [`.${ext}`] } }],
+      });
+      const out = await handle.createWritable();
+      await out.write(blob);
+      await out.close();
+      setStatus(`Saved ${handle.name}.`);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // dialog closed
+    }
+  }
+  const a = document.createElement('a');
+  a.href = result.url;
+  a.download = name;
+  a.click();
+  setStatus(`Saved ${name} to your downloads.`);
 }
 
 // ---------- Overlay ----------
@@ -744,7 +901,7 @@ function renderOverlay(now) {
     phase: 'idle', track, here: null, project: projector(), spots,
     avatar: avatarImg || photos[0]?.img || null,
     title: ui.title.value || track?.name || '', subtitle: ui.subtitle.value,
-    minimap, headline: track ? headlineStats() : [], summaryRows: track ? summaryRows() : [], time: now,
+    minimap, headline: track ? headlineStats() : [], summaryRows: track ? summaryRows() : [], time: anim ? anim.clock : now,
     introT: 0, barAlpha: 0, dotAlpha: 0, summaryAlpha: 0, photo: null,
   };
   if (anim && track) {
@@ -758,7 +915,7 @@ function renderOverlay(now) {
     if (anim.phase === 'outro') f.barAlpha = 1 - ease(t / 800);
     f.dotAlpha = anim.phase === 'fly' || anim.phase === 'photo' ? 1 : anim.phase === 'outro' ? 1 - ease(t / 800) : 0;
     if (anim.phase === 'summary') f.summaryAlpha = ease(t / 700);
-    f.rider = riderBadge(f);
+    f.rider = riderSprite(w, h);
     if (anim.phase === 'photo' && anim.photo) {
       f.photo = {
         img: anim.photo.img, alpha: ease(Math.min(t, anim.photoMs - t) / PHOTO_FADE_MS), progress: t / anim.photoMs,
@@ -772,14 +929,13 @@ function renderOverlay(now) {
   drawOverlay(octx, w, h, f);
 }
 
-// The chosen vehicle, mirrored to face where the route heads on screen. Flips only on a
-// clear change of direction so it doesn't flicker on wiggly roads.
-function riderBadge(f) {
-  const img = RIDERS[ui.rider.value];
-  if (!img) return null;
-  const a = f.project(f.here.lngLat), b = f.project(pointAt(track, anim.d + 400).lngLat);
-  if (a && b && Math.abs(b[0] - a[0]) > 6) anim.riderFlip = b[0] < a[0];
-  return { img, flip: !!anim.riderFlip };
+// The chosen vehicle rendered as the map camera sees it: tilted like the map, turned by its
+// heading relative to the map's bearing.
+function riderSprite(w, h) {
+  if (ui.rider.value === 'dot') return null;
+  const size = Math.round((VEHICLE_SIZE * Math.min(w, h)) / 1080);
+  const img = vehicles.render(ui.rider.value, anim.heading - map.getBearing(), map.getPitch(), size);
+  return img && { img, size };
 }
 
 // Clicks on the frame: close an open photo, open a pin's photo, or jump via the profile.
@@ -795,7 +951,7 @@ ui.stage.addEventListener('click', (e) => {
   const y = ((e.clientY - rect.top) / rect.height) * ui.overlay.height;
   if (anim) {
     const r = profileRect(ui.overlay.width, ui.overlay.height);
-    if ((anim.phase === 'fly' || anim.phase === 'photo') && x >= r.x && x <= r.x + r.w && y >= r.y - 20 && y <= r.y + r.h + 20) {
+    if (!anim.recorder && (anim.phase === 'fly' || anim.phase === 'photo') && x >= r.x && x <= r.x + r.w && y >= r.y - 20 && y <= r.y + r.h + 20) {
       jumpTo(((x - r.x) / r.w) * track.total);
     }
     return;
@@ -845,7 +1001,10 @@ ui.play.addEventListener('click', () => {
   }
 });
 ui.stop.addEventListener('click', stopAnimation);
-ui.record.addEventListener('click', () => startAnimation({ record: true }));
+ui.render.addEventListener('click', startRender);
+$('render-cancel').addEventListener('click', () => (anim?.recorder ? stopAnimation() : cancelRender()));
+$('result-save').addEventListener('click', saveResult);
+$('result-discard').addEventListener('click', clearResult);
 ui.offset.addEventListener('change', () => track && refreshPhotos());
 ui.format.addEventListener('change', () => { stopAnimation(); fitStage(); });
 window.addEventListener('resize', () => { if (!anim?.recorder) fitStage(); });

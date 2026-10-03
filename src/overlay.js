@@ -48,7 +48,7 @@ export function pinHeads(w, h, f) {
  *   spots, avatar, title, subtitle, minimap,
  *   headline: [{ icon, value, label }], summaryRows: [[label, value]],
  *   introT, barAlpha, dotAlpha, summaryAlpha, photo: { img, alpha, progress, tilt, caption } | null,
- *   rider: { img, flip } | null — vehicle badge above the position dot,
+ *   rider: { img, size } | null — rendered 3D vehicle (square, ground point at its centre) shown instead of the dot,
  * }
  */
 export function drawOverlay(ctx, w, h, f) {
@@ -233,6 +233,10 @@ function accentGradient(ctx, x, y, r) {
 function drawDot(ctx, u, f) {
   const p = f.project(f.here.lngLat);
   if (!p) return;
+  if (f.rider) {
+    drawVehicle(ctx, u, p, f.rider, f.dotAlpha);
+    return;
+  }
   const pulse = 0.5 + 0.5 * Math.sin((f.time ?? 0) / 260);
   ctx.save();
   ctx.globalAlpha = f.dotAlpha;
@@ -251,36 +255,21 @@ function drawDot(ctx, u, f) {
   ctx.beginPath();
   ctx.arc(p[0], p[1], 7.5 * u, 0, Math.PI * 2);
   ctx.fill();
-  if (f.rider?.img.complete && f.rider.img.naturalWidth) drawRider(ctx, u, p, f.rider);
   ctx.restore();
 }
 
-// Vehicle badge: white disc with an accent ring on a short stem above the position dot,
-// the vehicle facing the direction of travel.
-function drawRider(ctx, u, [x, y], { img, flip }) {
-  const r = 62 * u, cy = y - 100 * u;
+// The 3D vehicle standing on the route, with a soft shadow under it.
+function drawVehicle(ctx, u, [x, y], { img, size }, alpha) {
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.45)';
-  ctx.shadowBlur = 14 * u;
-  ctx.fillStyle = ACCENT;
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, 70 * u);
+  g.addColorStop(0, 'rgba(0,0,0,0.35)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(x - 12 * u, cy + r - 6 * u);
-  ctx.lineTo(x, y - 16 * u);
-  ctx.lineTo(x + 12 * u, cy + r - 6 * u);
+  ctx.ellipse(x, y, 70 * u, 34 * u, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = accentGradient(ctx, x, cy, r);
-  ctx.beginPath();
-  ctx.arc(x, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(x, cy, r - 6 * u, 0, Math.PI * 2);
-  ctx.fill();
-  const iw = 96 * u, ih = (iw * img.naturalHeight) / img.naturalWidth;
-  ctx.translate(x, cy + 2 * u);
-  if (flip) ctx.scale(-1, 1);
-  ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+  ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
   ctx.restore();
 }
 

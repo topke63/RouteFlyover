@@ -109,8 +109,24 @@
     <div class="buttons">
       <button id="play" disabled>▶ Play</button>
       <button id="stop" disabled>■ Stop</button>
-      <button id="record" class="primary" disabled>● Record video</button>
+      <button id="render" class="primary" disabled>🎬 Render video</button>
     </div>
+
+    <section id="render-box" class="panel" hidden>
+      <div class="row"><b id="render-stage">Rendering frames…</b><span id="render-pct">0%</span></div>
+      <progress id="render-bar" max="1" value="0"></progress>
+      <div class="row"><small id="render-time"></small><button id="render-cancel" type="button">Cancel</button></div>
+    </section>
+
+    <section id="result-box" class="panel" hidden>
+      <h2>Your video</h2>
+      <video id="result-video" controls playsinline preload="metadata"></video>
+      <p id="result-info" class="note"></p>
+      <div class="row">
+        <button id="result-save" class="primary" type="button">💾 Save video</button>
+        <button id="result-discard" type="button">Discard</button>
+      </div>
+    </section>
     <p id="status" class="note"></p>
   </aside>
 
