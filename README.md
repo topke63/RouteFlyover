@@ -12,6 +12,21 @@ your phone.
 Nothing is uploaded anywhere: your GPX, photos, music and the finished video stay on your
 machine. The only network traffic is fetching public map tiles.
 
+<p align="center">
+  <img src="docs/demo.webp" width="320" alt="Animation: a 3D adventure motorcycle climbs the Stelvio Pass hairpins over satellite imagery, photo pins appear on the road and a photo pops up">
+</p>
+
+<p align="center">
+  <img src="docs/frames.jpg" alt="Four moments of a rendered video: intro card with route mini-map and trip stats, the 3D motorcycle on the hairpins with live distance, time and climb, a photo stop with time and distance, and the closing summary card over the Alps">
+</p>
+
+<p align="center"><em>From the included demo trip over the Stelvio Pass — vertical 1080×1920 video.</em></p>
+
+![The Route Flyover app: sidebar with route stats, photo list and settings, and the video preview with the route, photo pins and town names](docs/app.jpg)
+
+**Try it in a minute:** start the app (see [Installation](#installation)), then drop all files
+from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three photos.
+
 ---
 
 ## Contents
@@ -182,7 +197,8 @@ Rendering takes longer than the video it produces, because every frame waits unt
 imagery is sharp — the waiting never shows up in the video. Expect roughly 1.5–2× the video
 length, plus a short MP4 conversion at the end.
 
-A small sample route is included in `samples/` to try things out.
+A demo trip is included in `samples/`: drop all its files in at once — a 46.7 km ride over the
+Stelvio Pass with three photos (credits in [`samples/CREDITS.md`](samples/CREDITS.md)).
 
 ---
 
@@ -324,7 +340,8 @@ Route Flyoverover/
 ├── vite.config.js      dev/preview server, including the local ffmpeg MP4 endpoint
 ├── public/
 │   └── logo.svg        Route Flyover logo
-├── samples/            small demo route and photos
+├── docs/               README screenshots and animation
+├── samples/            demo trip over the Stelvio Pass (GPX + photos, credits)
 └── src/
     ├── main.js         app: map, loading, camera, animation timeline, render flow
     ├── overlay.js      everything drawn over the map (intro, HUD, pins, photos, summary)
