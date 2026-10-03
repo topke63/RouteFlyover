@@ -2,7 +2,7 @@
 // constant 30 fps plus AAC audio, with the index up front so it starts playing at once.
 // Instagram, WhatsApp and phones expect this; browsers often record WebM/VP8 instead.
 //
-// Preferred: the local RouteFly server converts with the system ffmpeg (see vite.config.js).
+// Preferred: the local Route Flyover server converts with the system ffmpeg (see vite.config.js).
 // Fallback, e.g. when the app is served as static files: convert in the browser, which
 // only works where the browser can really encode H.264 (Chrome; not Firefox on Linux).
 import { Input, BlobSource, ALL_FORMATS, Output, BufferTarget, Mp4OutputFormat, Conversion, canEncodeAudio } from 'mediabunny';
@@ -16,7 +16,7 @@ export async function toMp4(blob, onProgress, signal) {
     if (signal?.aborted) throw err;
     // No local server (static hosting): fall through to the browser.
   }
-  // Only RouteFly's own server answers with JSON; anything else (404/405 from static
+  // Only Route Flyover's own server answers with JSON; anything else (404/405 from static
   // hosting such as Cloudflare) means there's no converter here.
   const fromConverter = res?.headers.get('content-type')?.includes('application/json');
   if (res?.ok && fromConverter) return convertOnServer((await res.json()).id, onProgress, signal);

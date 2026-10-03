@@ -1,8 +1,8 @@
-# RouteFly
+# Route Flyover
 
 **Turn a GPX track, your photos and your music into a 3D fly-over video of your trip.**
 
-RouteFly is a personal web app that runs on your own computer. Drop in a GPX file from your
+Route Flyover is a personal web app that runs on your own computer. Drop in a GPX file from your
 ride, hike or drive, add the photos you took along the way and a few songs, and it flies a
 camera along your route over satellite imagery and real 3D terrain. It stops at every photo,
 shows live distance / time / climb, ends with a zoom-out to the curve of the Earth and a
@@ -19,7 +19,7 @@ machine. The only network traffic is fetching public map tiles.
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-- [Running RouteFly](#running-routefly)
+- [Running Route Flyover](#running-route-flyover)
 - [How to use it](#how-to-use-it)
 - [Settings reference](#settings-reference)
 - [How things work](#how-things-work)
@@ -122,8 +122,8 @@ and make sure `ffmpeg` is on your `PATH`.
 ## Installation
 
 ```bash
-git clone https://github.com/topke63/RouteFly.git
-cd RouteFly
+git clone https://github.com/topke63/Route Flyoverover.git
+cd Route Flyoverover
 npm install
 ```
 
@@ -131,7 +131,7 @@ That's all — no API keys or accounts are needed.
 
 ---
 
-## Running RouteFly
+## Running Route Flyover
 
 ### For everyday use
 
@@ -151,7 +151,7 @@ npm run build      # creates dist/
 npm run preview    # serves dist/ on http://localhost:4173, including MP4 conversion
 ```
 
-> **MP4 conversion needs the RouteFly server** (`npm run dev` or `npm run preview`), because it
+> **MP4 conversion needs the Route Flyover server** (`npm run dev` or `npm run preview`), because it
 > uses your system's ffmpeg. If you host the contents of `dist/` on a plain web server instead,
 > everything else works, and MP4 conversion falls back to the browser — which works in
 > Chrome but not in Firefox on Linux (Firefox can't encode H.264/AAC there). WebM always works.
@@ -217,7 +217,7 @@ one photo duration per photo + zoom-out (5 s) + summary (7 s).
    placed where you were at that time. Time zones are taken from the photo when the camera
    stored them; otherwise use the *camera clock offset* setting.
 3. Converted copies (screenshots, re-saved JPEG/PNG) usually lost their GPS and time. Keep the
-   originals — if both are dropped in, RouteFly uses the metadata of whichever copy has it.
+   originals — if both are dropped in, Route Flyover uses the metadata of whichever copy has it.
 
 ### Music
 - Songs play in the order you added them, at normal speed, with 2-second crossfades.
@@ -228,14 +228,14 @@ one photo duration per photo + zoom-out (5 s) + summary (7 s).
   not re-compressed). This keeps music and picture perfectly in sync.
 
 ### Rendering
-RouteFly doesn't film the screen. It advances the animation by exactly 1/30 s, waits until
+Route Flyover doesn't film the screen. It advances the animation by exactly 1/30 s, waits until
 the map has loaded everything for that moment, draws the map and the overlay, and encodes
 that picture as the next frame (VP8, via WebCodecs). Each frame is stamped with its exact
 time, so the video is perfectly smooth and exactly as long as the timeline — slow tiles or a
 slow computer only make rendering take longer.
 
 ### MP4 export
-Rendering produces WebM. With *Save as MP4*, the finished file is sent to the local RouteFly
+Rendering produces WebM. With *Save as MP4*, the finished file is sent to the local Route Flyover
 server, which converts it with ffmpeg (reporting real progress) using:
 
 ```
@@ -247,7 +247,7 @@ ffmpeg -i input -c:v libx264 -preset medium -crf 21 -maxrate 12M -bufsize 24M \
 and returns the MP4. The data only travels between your browser and your own computer.
 
 ### Map loading
-Satellite imagery and terrain are streamed while you fly. To keep frames sharp, RouteFly
+Satellite imagery and terrain are streamed while you fly. To keep frames sharp, Route Flyover
 limits detail to what the camera can show, spreads requests over two server hostnames,
 prefetches the stretch of route ahead of the camera, and — when rendering — waits for
 missing tiles before drawing each frame.
@@ -281,7 +281,7 @@ Videos from your phone (`.MP4`, `.MOV`) aren't used yet and are listed as such.
 - **Longer flights look better.** Around 0.6 s per km is a good start; very fast flights give
   the map less time to load.
 - **Higher camera = smoother, sharper video**, especially on long routes.
-- **Close other heavy tabs** while rendering, and keep the RouteFly tab visible — browsers slow
+- **Close other heavy tabs** while rendering, and keep the Route Flyover tab visible — browsers slow
   down hidden tabs.
 - **Instagram Reels:** vertical format, MP4.
 
@@ -302,7 +302,7 @@ original from your phone or camera.
 adjust *Camera clock offset*.
 
 **"Couldn't convert to MP4 (…)".** The video was saved as WebM instead. Make sure you started
-RouteFly with `npm run dev` / `npm run preview` and that `ffmpeg` with `libx264` is installed
+Route Flyover with `npm run dev` / `npm run preview` and that `ffmpeg` with `libx264` is installed
 (see [Requirements](#requirements)). Convert an existing WebM by hand with:
 ```bash
 ffmpeg -i video.webm -c:v libx264 -crf 21 -pix_fmt yuv420p -r 30 -c:a aac -movflags +faststart video.mp4
@@ -319,11 +319,11 @@ very long, fast flight makes it slower; try the *high* camera or a longer flight
 ## Project structure
 
 ```
-RouteFly/
+Route Flyoverover/
 ├── index.html          page layout: sidebar controls and the video stage
 ├── vite.config.js      dev/preview server, including the local ffmpeg MP4 endpoint
 ├── public/
-│   └── logo.svg        RouteFly logo
+│   └── logo.svg        Route Flyover logo
 ├── samples/            small demo route and photos
 └── src/
     ├── main.js         app: map, loading, camera, animation timeline, render flow
@@ -349,7 +349,7 @@ and [heic-to](https://github.com/hoppergee/heic-to).
 
 ## Map data, fonts and attribution
 
-RouteFly uses free public map services. They're credited in every video frame; please keep
+Route Flyover uses free public map services. They're credited in every video frame; please keep
 those credits and respect each provider's terms, especially before publishing videos
 commercially.
 
@@ -369,11 +369,11 @@ carries no manufacturer logo. BMW and GS are trademarks of their respective owne
 
 Copyright © 2026 topke
 
-RouteFly is free software: you can redistribute it and/or modify it under the terms of the
+Route Flyover is free software: you can redistribute it and/or modify it under the terms of the
 **GNU General Public License** as published by the Free Software Foundation, either
 **version 3** of the License, or (at your option) any later version.
 
-RouteFly is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+Route Flyover is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
 even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 [LICENSE](LICENSE) file for the full text.
 

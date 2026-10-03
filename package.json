@@ -1,5 +1,5 @@
 {
-  "name": "routefly",
+  "name": "route-flyover",
   "version": "0.1.0",
   "description": "Turn a GPX track, photos and music into a 3D fly-over video of your trip — runs locally in the browser",
   "license": "GPL-3.0-or-later",

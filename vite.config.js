@@ -48,7 +48,7 @@ function mp4Converter() {
 
     try {
       if (!id && req.method === 'POST') {
-        const dir = await mkdtemp(join(tmpdir(), 'routefly-'));
+        const dir = await mkdtemp(join(tmpdir(), 'route-flyover-'));
         const input = join(dir, 'input'), output = join(dir, 'output.mp4');
         const chunks = [];
         for await (const chunk of req) chunks.push(chunk);
@@ -84,7 +84,7 @@ function mp4Converter() {
   };
 
   return {
-    name: 'routefly-mp4',
+    name: 'route-flyover-mp4',
     // Braces matter: a function returned from these hooks would be run as a post-hook.
     configureServer(server) { server.middlewares.use(handler); },
     configurePreviewServer(server) { server.middlewares.use(handler); },

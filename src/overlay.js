@@ -2,7 +2,7 @@
 // recorded video, so what you see is what you get. Sizes are in "design units": the
 // short side of the frame is 1080 units (a vertical video is 1080×1920).
 
-// RouteFly palette: coral-orange accent on frosted navy.
+// Route Flyover palette: coral-orange accent on frosted navy.
 export const ACCENT = '#ff5a1f';
 const ACCENT_2 = '#ff3d6e';
 const NAVY = 'rgba(13,21,36,0.78)';
@@ -90,9 +90,9 @@ function drawBrand(ctx, w, u) {
   ctx.font = `800 ${38 * u}px ${FONT}`;
   const base = y + size / 2 + 13 * u;
   ctx.fillStyle = '#fff';
-  ctx.fillText('Route', x + size + 16 * u, base);
+  ctx.fillText('Route ', x + size + 16 * u, base);
   ctx.fillStyle = ACCENT;
-  ctx.fillText('Fly', x + size + 16 * u + ctx.measureText('Route').width, base);
+  ctx.fillText('Flyover', x + size + 16 * u + ctx.measureText('Route ').width, base);
   ctx.restore();
 }
 

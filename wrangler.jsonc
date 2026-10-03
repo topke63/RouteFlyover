@@ -1,15 +1,16 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // RouteFly as a static site on Cloudflare Workers (static assets only, no server code).
-  // MP4 conversion falls back to the browser here; see README "Running RouteFly".
-  "name": "routefly",
+  // Route Flyover as a static site on Cloudflare Workers (static assets only, no server code).
+  // MP4 conversion falls back to the browser here; see README "Running Route Flyover".
+  "name": "route-flyover",
   "compatibility_date": "2026-09-15",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page"
   },
-  // https://routefly.topke63.workers.dev — protected by Cloudflare Access (set up in the
-  // dashboard: Workers & Pages → routefly → Access → All traffic, "Cloudflare account" policy).
-  "workers_dev": true,
+  // https://route-flyover.topke63.workers.dev — must be protected by Cloudflare Access (set up
+  // in the dashboard: Workers & Pages → route-flyover → Access → All traffic, "Cloudflare
+  // account" policy). Keep false until that protection exists, so it's never public.
+  "workers_dev": false,
   "preview_urls": false
 }
