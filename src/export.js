@@ -16,8 +16,11 @@ export async function toMp4(blob, onProgress, signal) {
     if (signal?.aborted) throw err;
     // No local server (static hosting): fall through to the browser.
   }
-  if (res?.ok) return convertOnServer((await res.json()).id, onProgress, signal);
-  if (res && res.status !== 404) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  // Only RouteFly's own server answers with JSON; anything else (404/405 from static
+  // hosting such as Cloudflare) means there's no converter here.
+  const fromConverter = res?.headers.get('content-type')?.includes('application/json');
+  if (res?.ok && fromConverter) return convertOnServer((await res.json()).id, onProgress, signal);
+  if (fromConverter) throw new Error((await res.json()).error || res.statusText);
   return toMp4InBrowser(blob, onProgress);
 }
 
