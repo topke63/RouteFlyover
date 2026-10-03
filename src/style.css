@@ -93,3 +93,7 @@ input[type=text] { background: var(--bg); color: var(--text); border: 1px solid 
 #render-bar::-webkit-progress-value { background: linear-gradient(90deg, #ff7a1a, #ff3d6e); border-radius: 5px; }
 #render-bar::-moz-progress-bar { background: linear-gradient(90deg, #ff7a1a, #ff3d6e); border-radius: 5px; }
 #result-video { width: 100%; max-height: 360px; border-radius: 8px; background: #000; }
+
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#new-session { padding: 6px 10px; font-size: 13px; color: var(--muted); }
+#new-session:hover { color: var(--text); border-color: var(--accent); }

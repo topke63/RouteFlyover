@@ -275,7 +275,8 @@ async function loadFiles(fileList) {
       updateSubtitle();
       if (mapReady) showTrack();
       minimap = null;
-      renderMinimap(track).then((c) => { minimap = c; });
+      const forTrack = track; // ignore the result if the session moved on meanwhile
+      renderMinimap(forTrack).then((c) => { if (track === forTrack) minimap = c; });
     }
     if (media.length) {
       const known = new Set(allPhotos.map((p) => p.key));
@@ -306,6 +307,46 @@ function showTrack() {
   $('stat-gain').textContent = `${Math.round(track.gain)} m`;
   $('stat-time').textContent = track.duration ? fmtDuration(track.duration) : '—';
   for (const b of [ui.play, ui.stop, ui.render]) b.disabled = false;
+}
+
+// Start over: drop this trip's route, photos, music, texts and any unsaved video.
+// Preferences (format, camera, rider, profile photo, flight settings, volume) stay.
+function newSession() {
+  const rendering = render || anim?.recorder;
+  if (rendering && !confirm('A video is being rendered. Stop it and start a new session?')) return;
+  if (!rendering && result && !confirm("Your rendered video hasn't been saved. Discard it and start a new session?")) return;
+  stopAnimation();
+  cancelRender();
+  clearResult();
+  viewer = null;
+  for (const p of allPhotos) URL.revokeObjectURL(p.url);
+  track = null;
+  allPhotos = [];
+  skippedFiles = [];
+  photos = [];
+  spots = [];
+  minimap = null;
+  music.stop();
+  music.songs.length = 0;
+  for (const input of [ui.title, ui.subtitle]) {
+    input.value = '';
+    delete input.dataset.edited;
+  }
+  ui.offset.value = 0;
+  ui.files.value = '';
+  $('info').hidden = true;
+  $('stat-photos').textContent = '0';
+  renderPhotoList();
+  renderMusic();
+  for (const b of [ui.play, ui.stop, ui.render]) b.disabled = true;
+  if (mapReady) {
+    for (const src of ['trail', 'trail-head']) map.getSource(src).setData(emptyLine());
+    trailDone = -1;
+    for (const layer of ['town-labels', 'village-labels']) map.setFilter(layer, ['boolean', false]);
+    map.flyTo({ center: [20.46, 44.81], zoom: 5, pitch: 0, bearing: 0, duration: 1200 });
+  }
+  setStatus('');
+  renderOverlay(performance.now());
 }
 
 function refreshPhotos() {
@@ -1001,6 +1042,7 @@ ui.play.addEventListener('click', () => {
   }
 });
 ui.stop.addEventListener('click', stopAnimation);
+$('new-session').addEventListener('click', newSession);
 ui.render.addEventListener('click', startRender);
 $('render-cancel').addEventListener('click', () => (anim?.recorder ? stopAnimation() : cancelRender()));
 $('result-save').addEventListener('click', saveResult);
