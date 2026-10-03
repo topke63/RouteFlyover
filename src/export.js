@@ -7,7 +7,8 @@
 // only works where the browser can really encode H.264 (Chrome; not Firefox on Linux).
 import { Input, BlobSource, ALL_FORMATS, Output, BufferTarget, Mp4OutputFormat, Conversion, canEncodeAudio } from 'mediabunny';
 
-// onProgress(fraction 0–1, or null when unknown). Rejects with an AbortError if `signal` fires.
+// onProgress(fraction 0–1 or null when unknown, encoder: 'nvenc' | 'x264' | undefined).
+// Rejects with an AbortError if `signal` fires.
 export async function toMp4(blob, onProgress, signal) {
   let res = null;
   try {
@@ -33,7 +34,7 @@ async function convertOnServer(id, onProgress, signal) {
       signal?.throwIfAborted();
       const status = await (await fetch(`/api/mp4/${id}`)).json();
       if (status.error) throw new Error(status.error);
-      onProgress(status.progress);
+      onProgress(status.progress, status.encoder);
       if (status.done) break;
     }
     const file = await fetch(`/api/mp4/${id}/file`, { signal });

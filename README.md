@@ -35,6 +35,7 @@ from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three 
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Running Route Flyover](#running-route-flyover)
+- [Hosting it online (optional)](#hosting-it-online-optional)
 - [How to use it](#how-to-use-it)
 - [Settings reference](#settings-reference)
 - [How things work](#how-things-work)
@@ -43,6 +44,7 @@ from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three 
 - [Troubleshooting](#troubleshooting)
 - [Project structure](#project-structure)
 - [Map data, fonts and attribution](#map-data-fonts-and-attribution)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -74,7 +76,8 @@ from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three 
 - Frame-by-frame rendering with a progress bar: the video is always perfectly smooth at
   30 fps and exactly as long as the timeline, however fast your computer or connection is.
 - Preview the finished video in the app, then save it as MP4 (H.264 + AAC, constant 30 fps —
-  what Instagram and WhatsApp want) or WebM.
+  what Instagram and WhatsApp want) or WebM. MP4 conversion uses your NVIDIA GPU when available.
+- *New session* clears the trip in one click and keeps your settings for the next video.
 
 **Photos**
 - JPEG, PNG, WebP and iPhone HEIC/HEIF.
@@ -93,6 +96,7 @@ from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three 
 | **ffmpeg** with `libx264` and `aac` | any recent version (tested with 9.0) | converts rendered videos to MP4 — only needed for the MP4 option |
 | **Browser** | current Firefox or Chrome/Chromium | runs the app; needs WebGL 2 |
 | **Graphics** | any GPU with working WebGL 2 | 3D map rendering |
+| **NVIDIA GPU** *(optional)* | driver + ffmpeg with `h264_nvenc` | ~2.4× faster MP4 conversion; without it the CPU is used |
 | **Internet** | while using the app | satellite imagery, terrain and place names are streamed |
 
 Check what you have:
@@ -100,7 +104,7 @@ Check what you have:
 ```bash
 node --version
 npm --version
-ffmpeg -hide_banner -encoders | grep -E "libx264|aac"
+ffmpeg -hide_banner -encoders | grep -E "libx264|aac|h264_nvenc"   # h264_nvenc only with NVIDIA
 ```
 
 ### Installing the requirements
@@ -137,8 +141,8 @@ and make sure `ffmpeg` is on your `PATH`.
 ## Installation
 
 ```bash
-git clone https://github.com/topke63/Route Flyoverover.git
-cd Route Flyoverover
+git clone https://github.com/topke63/RouteFlyover.git
+cd RouteFlyover
 npm install
 ```
 
@@ -173,6 +177,33 @@ npm run preview    # serves dist/ on http://localhost:4173, including MP4 conver
 
 ---
 
+## Hosting it online (optional)
+
+Route Flyover can also run as a website, so you and friends can use it from any computer —
+e.g. on **Cloudflare Workers**, which serves the app's files for free. Everything still runs in
+each visitor's browser; nothing is uploaded.
+
+1. Create a free Cloudflare account and log in once: `npx wrangler login`.
+2. In [`wrangler.jsonc`](wrangler.jsonc), set `"name"` to your own Worker name and keep
+   `"workers_dev": false` for now, so the site isn't reachable yet.
+3. Build and upload:
+   ```bash
+   npm run build && npx wrangler deploy
+   ```
+4. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
+   Trust in the Cloudflare dashboard, then **Workers & Pages → your Worker → Access → Protect this
+   Worker behind Access → All traffic** with a policy for yourself (*Cloudflare account*) and/or
+   your friends (*Emails*, with **One-time PIN** login).
+5. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
+   It should ask for the login before showing anything.
+
+Keep the login: the free map services are meant for personal use (see
+[Map data, fonts and attribution](#map-data-fonts-and-attribution)), and a public site puts their
+traffic on your account. Online, MP4 conversion happens in the browser (Chrome yes, Firefox no —
+there it saves WebM), because there's no ffmpeg server.
+
+---
+
 ## How to use it
 
 1. **Add your trip.** Drag a `.gpx` file onto the page (or click the drop area). The route
@@ -192,6 +223,10 @@ npm run preview    # serves dist/ on http://localhost:4173, including MP4 conver
    name and size. Click **💾 Save video**: Chrome asks where to save it; Firefox saves it
    through its normal download (to your Downloads folder, or asks, depending on your Firefox
    settings). **Discard** throws it away.
+8. **Start the next video** with **↺ New session** (top of the sidebar). It clears the route,
+   photos, music, titles and any unsaved video, and keeps your preferences — format, camera,
+   rider marker, profile photo, flight settings, volume. It asks first if a render is running
+   or a finished video hasn't been saved.
 
 Rendering takes longer than the video it produces, because every frame waits until the map
 imagery is sharp — the waiting never shows up in the video. Expect roughly 1.5–2× the video
@@ -252,15 +287,26 @@ slow computer only make rendering take longer.
 
 ### MP4 export
 Rendering produces WebM. With *Save as MP4*, the finished file is sent to the local Route Flyover
-server, which converts it with ffmpeg (reporting real progress) using:
+server, which converts it with ffmpeg (reporting real progress) and returns the MP4. The data
+only travels between your browser and your own computer.
+
+**NVIDIA GPU acceleration.** If your ffmpeg has `h264_nvenc` and an NVIDIA card is usable, the
+video is encoded on the GPU — about 2.4× faster (an 88 s video: ~9 s instead of ~20 s on an
+RTX 5060 Ti) at the same picture quality and file size. Route Flyover checks this with a tiny test
+encode; without a usable NVIDIA GPU, or if the GPU fails during a job (for example when another
+program has filled its memory), it converts on the CPU instead. The progress bar shows which one
+is used: *Converting to MP4 (NVIDIA GPU)* or *(CPU)*. The two settings are:
 
 ```
-ffmpeg -i input -c:v libx264 -preset medium -crf 21 -maxrate 12M -bufsize 24M \
-       -profile:v high -pix_fmt yuv420p -r 30 -fps_mode cfr \
+# NVIDIA GPU
+ffmpeg -i input -c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 25 -b:v 0 \
+       -maxrate 12M -bufsize 24M -profile:v high -pix_fmt yuv420p -r 30 -fps_mode cfr \
+       -c:a aac -b:a 192k -ar 48000 -movflags +faststart output.mp4
+# CPU
+ffmpeg -i input -c:v libx264 -preset medium -crf 21 \
+       -maxrate 12M -bufsize 24M -profile:v high -pix_fmt yuv420p -r 30 -fps_mode cfr \
        -c:a aac -b:a 192k -ar 48000 -movflags +faststart output.mp4
 ```
-
-and returns the MP4. The data only travels between your browser and your own computer.
 
 ### Map loading
 Satellite imagery and terrain are streamed while you fly. To keep frames sharp, Route Flyover
@@ -324,6 +370,11 @@ Route Flyover with `npm run dev` / `npm run preview` and that `ffmpeg` with `lib
 ffmpeg -i video.webm -c:v libx264 -crf 21 -pix_fmt yuv420p -r 30 -c:a aac -movflags +faststart video.mp4
 ```
 
+**MP4 conversion says (CPU) although I have an NVIDIA card.** Check that
+`ffmpeg -hide_banner -encoders | grep h264_nvenc` lists the encoder and that `nvidia-smi` works.
+If another program (e.g. a local AI model) fills the GPU's memory, Route Flyover falls back to the
+CPU and tries the GPU again after 5 minutes.
+
 **HEIC photos fail to load.** Very unusual HEIC variants may not decode; export them as JPEG
 from your phone or photo app (keeping location data).
 
@@ -335,9 +386,10 @@ very long, fast flight makes it slower; try the *high* camera or a longer flight
 ## Project structure
 
 ```
-Route Flyoverover/
+RouteFlyover/
 ├── index.html          page layout: sidebar controls and the video stage
 ├── vite.config.js      dev/preview server, including the local ffmpeg MP4 endpoint
+├── wrangler.jsonc      optional Cloudflare Workers hosting (see "Hosting it online")
 ├── public/
 │   └── logo.svg        Route Flyover logo
 ├── docs/               README screenshots and animation
@@ -379,6 +431,26 @@ commercially.
 
 The motorcycle marker is a generic low-poly adventure bike in the style of a BMW R 1200 GS; it
 carries no manufacturer logo. BMW and GS are trademarks of their respective owner.
+
+---
+
+## Changelog
+
+**0.2.0**
+- MP4 conversion on the NVIDIA GPU (NVENC) when available, ~2.4× faster; automatic CPU fallback;
+  the progress bar shows which one is used.
+- *Render video* with a progress bar (stages, time left, cancel), in-app preview and *Save video*.
+- Frame-by-frame rendering: videos are always smooth 30 fps and exactly as long as the timeline.
+- 3D rider markers: car, GS-style adventure motorcycle, two motorcycles, bicycle (dot still available).
+- *New session* button.
+- Renamed from RouteFly to Route Flyover; new look (coral and navy theme, logo).
+- Demo trip over the Stelvio Pass in `samples/`, README screenshots and animation.
+- Can be hosted on Cloudflare Workers behind Cloudflare Access.
+
+**0.1.0**
+- First version: GPX + photos + music → 3D fly-over video over satellite imagery and terrain,
+  intro card, chase camera, photo stops, live stats, zoom-out ending and statistics card;
+  MP4 export through the local ffmpeg server.
 
 ---
 

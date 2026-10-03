@@ -9,18 +9,39 @@ import { randomUUID } from 'node:crypto';
 // Local MP4 conversion with the system ffmpeg: H.264 High, yuv420p, constant 30 fps,
 // AAC 48 kHz, index up front — what Instagram and phones expect. Browsers like Firefox
 // can't encode H.264/AAC themselves, so the local dev/preview server does it.
+// Uses the NVIDIA GPU encoder (NVENC) when it works on this machine, else the CPU (x264).
 //
 //   POST   /api/mp4           body: the recorded video  → { id }
-//   GET    /api/mp4/:id       → { progress (0–1, or null if unknown), done, error }
+//   GET    /api/mp4/:id       → { progress (0–1, or null if unknown), done, error, encoder }
 //   GET    /api/mp4/:id/file  → the MP4 (the job is cleaned up afterwards)
 //   DELETE /api/mp4/:id       → cancel
-const FFMPEG_ARGS = [
-  '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-maxrate', '12M', '-bufsize', '24M',
-  '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+const ENCODERS = {
+  // ~2.4× faster than x264 on an RTX 5060 Ti at the same picture quality (SSIM) and size.
+  nvenc: ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', '25', '-b:v', '0'],
+  x264: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '21'],
+};
+const COMMON_ARGS = [
+  '-maxrate', '12M', '-bufsize', '24M', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
   '-r', '30', '-fps_mode', 'cfr',
   '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
   '-movflags', '+faststart',
 ];
+
+// Whether NVENC really works here (driver loaded, GPU usable), checked with a tiny test
+// encode rather than just looking for the card. A failed check is retried after a while,
+// e.g. once a GPU-hungry program has freed the card.
+let nvenc = { at: 0, ok: null };
+async function nvencWorks() {
+  if (nvenc.ok === true || (nvenc.ok === false && Date.now() - nvenc.at < 5 * 60e3)) return nvenc.ok;
+  const ok = await new Promise((resolve) => {
+    const proc = spawn('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=30:d=0.2',
+      '-c:v', 'h264_nvenc', '-f', 'null', '-']);
+    proc.on('error', () => resolve(false));
+    proc.on('close', (code) => resolve(code === 0));
+  });
+  nvenc = { at: Date.now(), ok };
+  return ok;
+}
 
 function mp4Converter() {
   const jobs = new Map(); // id → { dir, output, progress, done, error, proc }
@@ -55,18 +76,34 @@ function mp4Converter() {
         await writeFile(input, Buffer.concat(chunks));
         const newId = randomUUID();
         const duration = await probeDuration(input);
-        const entry = { dir, output, progress: duration ? 0 : null, done: false, error: null };
+        const entry = { dir, output, progress: duration ? 0 : null, done: false, error: null, encoder: null };
         jobs.set(newId, entry);
-        entry.proc = runFfmpeg(['-y', '-v', 'error', '-nostats', '-progress', 'pipe:1', '-i', input, ...FFMPEG_ARGS, output], {
-          onTime: (seconds) => { if (duration) entry.progress = Math.min(1, seconds / duration); },
-          onExit: (error) => { entry.done = true; entry.error = error; entry.proc = null; },
-        });
+        // GPU first if it works; if it fails mid-job (e.g. out of GPU memory), redo on the CPU.
+        const order = (await nvencWorks()) ? ['nvenc', 'x264'] : ['x264'];
+        const start = (i) => {
+          entry.encoder = order[i];
+          entry.progress = duration ? 0 : null;
+          entry.proc = runFfmpeg(['-y', '-v', 'error', '-nostats', '-progress', 'pipe:1', '-i', input, ...ENCODERS[order[i]], ...COMMON_ARGS, output], {
+            onTime: (seconds) => { if (duration) entry.progress = Math.min(1, seconds / duration); },
+            onExit: (error) => {
+              if (error && error !== 'cancelled' && order[i + 1] && jobs.has(newId)) {
+                console.warn(`[route-flyover] ${order[i]} failed (${error}); converting with ${order[i + 1]} instead`);
+                start(i + 1);
+                return;
+              }
+              entry.done = true;
+              entry.error = error;
+              entry.proc = null;
+            },
+          });
+        };
+        start(0);
         // Drop jobs nobody collects.
         setTimeout(() => cleanup(newId), 60 * 60e3).unref();
         return json(res, 200, { id: newId });
       }
       if (job && !file && req.method === 'GET') {
-        return json(res, 200, { progress: job.progress, done: job.done, error: job.error });
+        return json(res, 200, { progress: job.progress, done: job.done, error: job.error, encoder: job.encoder });
       }
       if (job && file && req.method === 'GET' && job.done && !job.error) {
         res.setHeader('content-type', 'video/mp4');

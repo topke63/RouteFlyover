@@ -770,7 +770,8 @@ function startRender() {
 }
 
 // Progress of one stage (0–1, or null if unknown) → overall bar, percentage and time left.
-function renderProgress(stage, fraction) {
+// `detail` is shown next to the stage name, e.g. which encoder converts the MP4.
+function renderProgress(stage, fraction, detail) {
   if (!render) return;
   const total = render.stages.reduce((sum, st) => sum + STAGES[st].weight, 0);
   let before = 0;
@@ -780,7 +781,7 @@ function renderProgress(stage, fraction) {
   }
   const overall = Math.min(1, (before + STAGES[stage].weight * Math.min(1, fraction ?? 0)) / total);
   const elapsed = (performance.now() - render.started) / 1000;
-  $('render-stage').textContent = `${STAGES[stage].label}…`;
+  $('render-stage').textContent = `${STAGES[stage].label}${detail ? ` (${detail})` : ''}…`;
   $('render-pct').textContent = `${Math.floor(overall * 100)}%`;
   $('render-bar').value = overall;
   $('render-time').textContent = overall > 0.03
@@ -811,7 +812,8 @@ async function finishRender(rec) {
     if (stages.includes('mp4')) {
       renderProgress('mp4', 0);
       try {
-        blob = await toMp4(blob, (p) => renderProgress('mp4', p), signal);
+        const ENCODER_NAMES = { nvenc: 'NVIDIA GPU', x264: 'CPU' };
+        blob = await toMp4(blob, (p, encoder) => renderProgress('mp4', p, ENCODER_NAMES[encoder]), signal);
       } catch (err) {
         if (signal.aborted) return;
         console.error(err);
