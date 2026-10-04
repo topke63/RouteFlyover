@@ -186,20 +186,32 @@ each visitor's browser; nothing is uploaded.
 1. Create a free Cloudflare account and log in once: `npx wrangler login`.
 2. In [`wrangler.jsonc`](wrangler.jsonc), set `"name"` to your own Worker name and keep
    `"workers_dev": false` for now, so the site isn't reachable yet.
-3. Build and upload:
+3. **Get a free ArcGIS API key** (needed for a public site, see below): create an
+   [ArcGIS Location Platform](https://location.arcgis.com/) account (no credit card needed),
+   then create an API key with the **Basemaps** and **Static basemap tiles** privileges, and
+   under *Referrers* allow only your site (e.g. `https://route-flyover.example.com`). Put it
+   in a file `.env.local` next to `package.json` (it's git-ignored):
+   ```bash
+   VITE_ARCGIS_KEY=your-key-here
+   ```
+   The key ends up in the site's JavaScript — that's normal for map keys; the referrer
+   restriction is what stops other sites from using it. Without a card on the account, the
+   free monthly allowance can't turn into a bill: past it, imagery stops until next month.
+4. Build and upload:
    ```bash
    npm run build && npx wrangler deploy
    ```
-4. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
+5. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
    Trust in the Cloudflare dashboard, then **Workers & Pages → your Worker → Access → Protect this
    Worker behind Access → All traffic** with a policy for yourself (*Cloudflare account*) and/or
    your friends (*Emails*, with **One-time PIN** login).
-5. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
+6. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
    It should ask for the login before showing anything.
 
-Keep the login: the free map services are meant for personal use (see
-[Map data, fonts and attribution](#map-data-fonts-and-attribution)), and a public site puts their
-traffic on your account. Online, MP4 conversion happens in the browser (Chrome yes, Firefox no —
+Without an API key, keep the login: the public Esri tile servers are meant for personal use (see
+[Map data, fonts and attribution](#map-data-fonts-and-attribution)). With a key, imagery and the
+intro mini-map come from Esri's key-based services and count against your account's free
+allowance; when running locally without `.env.local`, the public servers are used as before. Online, MP4 conversion happens in the browser (Chrome yes, Firefox no —
 there it saves WebM), because there's no ffmpeg server.
 
 ---

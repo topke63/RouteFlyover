@@ -43,13 +43,19 @@ const MUSIC_FADE = { delay: 2.5, duration: 4.2 }; // s into the summary; silent 
 const SPOT_RADIUS = 150;     // m along the route; photos closer than this share a pin
 const LABEL_DISTANCE = { town: 4000, village: 1200 }; // m from the route
 
-// Tile servers speak HTTP/1.1 (6 connections per host), so each source lists two
+// Public tile servers speak HTTP/1.1 (6 connections per host), so those sources list two
 // hostnames for the same data to double throughput. Max zooms are kept low on
 // purpose: the camera never needs more, and higher zooms multiply requests.
-const SAT_TILES = [
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-];
+// With an ArcGIS API key (VITE_ARCGIS_KEY, see README "Hosting it online") the imagery comes
+// from Esri's key-based service (HTTP/2, one host is enough), as Esri requires for public
+// sites; without one, from the public servers, which are fine for personal use.
+const ARCGIS_KEY = import.meta.env.VITE_ARCGIS_KEY;
+const SAT_TILES = ARCGIS_KEY
+  ? [`https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`]
+  : [
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    ];
 const DEM_TILES = [
   'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
   'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png',
@@ -514,25 +520,72 @@ function setPhase(phase) {
 }
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+// Yields to pending work (tile data from the workers, the encoder) without waiting for the
+// next screen refresh.
+const nextTask = () => new Promise((resolve) => {
+  const { port1, port2 } = new MessageChannel();
+  port1.onmessage = () => resolve();
+  port2.postMessage(null);
+});
 
 // Render loop: capture the current state as one frame, then advance the timeline by exactly
 // one frame's worth. Waiting for tiles or the encoder only slows rendering, never the video.
 async function renderFrames(run) {
   const frameMs = 1000 / FPS;
+  // Where the render time goes (dev only, logged when the frames are done): see logRenderTiming.
+  const t = run.timing = { started: performance.now(), frames: 0, waitMs: 0, holds: 0, holdMs: 0, drawMs: 0, overlayMs: 0, encodeMs: 0, stepMs: 0 };
+  let holding = true;
   for (;;) {
-    await nextFrame(); // lets MapLibre load and place tiles in between
+    let t0 = performance.now();
+    // Not tied to the screen's refresh rate: frames are drawn as fast as the GPU and encoder
+    // allow, and map.redraw() replaces MapLibre's own pending repaint instead of drawing twice.
+    // While holding for tiles, wait a screen refresh at a time so MapLibre can load them.
+    await (holding ? nextFrame() : nextTask());
     if (anim !== run) return;
-    if (holdForTiles(performance.now())) continue;
+    let t1 = performance.now();
+    holding = holdForTiles(t1);
+    if (holding) {
+      t.holds++;
+      t.holdMs += t1 - t0;
+      continue;
+    }
+    t.waitMs += t1 - t0;
     map.redraw();
-    renderOverlay(performance.now());
+    t0 = performance.now();
+    t.drawMs += t0 - t1;
+    renderOverlay(t0);
+    t1 = performance.now();
+    t.overlayMs += t1 - t0;
     await run.recorder.frame();
     if (anim !== run) return;
+    t0 = performance.now();
+    t.encodeMs += t0 - t1;
+    t.frames++;
     renderProgress('frames', anim.clock / anim.totalMs);
-    if (step(frameMs) === 'done') {
+    const done = step(frameMs) === 'done';
+    t.stepMs += performance.now() - t0;
+    if (done) {
+      if (import.meta.env.DEV) logRenderTiming(t);
       endAnimation();
       return;
     }
   }
+}
+
+// Breakdown of a render's frame stage, per part: total seconds, share and ms per video frame.
+function logRenderTiming(t) {
+  const total = performance.now() - t.started;
+  const row = (ms) => ({ seconds: +(ms / 1000).toFixed(1), share: `${Math.round((ms / total) * 100)}%`, msPerFrame: +(ms / t.frames).toFixed(1) });
+  console.info(`Render timing: ${t.frames} frames (${(t.frames / FPS).toFixed(1)} s of video) in ${(total / 1000).toFixed(1)} s, ` +
+    `${(t.frames / FPS / (total / 1000)).toFixed(2)}× real time; ${t.holds} waits for tiles`);
+  console.table({
+    'waiting for tiles': row(t.holdMs),
+    'yielding between frames': row(t.waitMs),
+    'drawing the map': row(t.drawMs),
+    'drawing the overlay': row(t.overlayMs),
+    'capturing + encoding': row(t.encodeMs),
+    'camera + prefetch': row(t.stepMs),
+  });
 }
 
 // Live preview: advance by real elapsed time.
@@ -796,13 +849,17 @@ async function finishRender(rec) {
   const notes = [];
   try {
     renderProgress('frames', 1);
+    const stageStart = performance.now();
+    const logStage = (label) => import.meta.env.DEV && console.info(`Render timing: ${label} ${((performance.now() - stageStart) / 1000).toFixed(1)} s after the last frame`);
     let { blob } = await rec.stop();
+    logStage('WebM finished');
     setRecordingResolution(false);
     if (signal.aborted) return;
     if (stages.includes('music')) {
       renderProgress('music', 0);
       try {
         ({ blob } = await addSoundtrack(blob, music));
+        logStage('music added');
       } catch (err) {
         console.error(err);
         notes.push(`Couldn't add the music (${err.message}), so the video is silent.`);
@@ -814,6 +871,7 @@ async function finishRender(rec) {
       try {
         const ENCODER_NAMES = { nvenc: 'NVIDIA GPU', x264: 'CPU' };
         blob = await toMp4(blob, (p, encoder) => renderProgress('mp4', p, ENCODER_NAMES[encoder]), signal);
+        logStage('MP4 converted');
       } catch (err) {
         if (signal.aborted) return;
         console.error(err);
