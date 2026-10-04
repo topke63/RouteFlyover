@@ -14,6 +14,7 @@ import { readPhotos, placePhotos, photoKey } from './photos.js';
 import { tripStats, fmtKm, fmtDuration } from './stats.js';
 import { bearing, destination, haversine, lerpAngle } from './geo.js';
 import { Recorder, FPS } from './recorder.js';
+import { initUsage, reportRender } from './usage.js';
 import { TilePrefetcher } from './prefetch.js';
 import { drawOverlay, profileRect, pinHeads, ACCENT, km, hm } from './overlay.js';
 import { renderMinimap } from './minimap.js';
@@ -882,6 +883,7 @@ async function finishRender(rec) {
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
     const name = `${(ui.title.value || track.name).replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'route'}.${ext}`;
     showResult(blob, name, (performance.now() - started) / 1000, notes);
+    reportRender($('usage'));
   } finally {
     if (!signal.aborted) endRender();
   }
@@ -1155,3 +1157,4 @@ ui.musicVol.addEventListener('input', () => {
 
 fitStage();
 renderMusic();
+initUsage($('usage'));

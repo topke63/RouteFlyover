@@ -197,15 +197,24 @@ each visitor's browser; nothing is uploaded.
    The key ends up in the site's JavaScript — that's normal for map keys; the referrer
    restriction is what stops other sites from using it. Without a card on the account, the
    free monthly allowance can't turn into a bill: past it, imagery stops until next month.
-4. Build and upload:
+4. **Create the map-tile counter's database** (Cloudflare D1, free tier). With a key, the
+   sidebar shows everyone roughly how many renders the free Esri allowance has left this month:
+   ```bash
+   npx wrangler d1 create route-flyover-usage    # put the printed database_id in wrangler.jsonc
+   npx wrangler d1 migrations apply route-flyover-usage --remote
+   ```
+   The count is an estimate from what each visitor's browser reports, per calendar month (UTC);
+   Esri's own usage page in your ArcGIS account is the exact figure and may reset on a
+   different day.
+5. Build and upload:
    ```bash
    npm run build && npx wrangler deploy
    ```
-5. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
+6. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
    Trust in the Cloudflare dashboard, then **Workers & Pages → your Worker → Access → Protect this
    Worker behind Access → All traffic** with a policy for yourself (*Cloudflare account*) and/or
    your friends (*Emails*, with **One-time PIN** login).
-6. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
+7. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
    It should ask for the login before showing anything.
 
 Without an API key, keep the login: the public Esri tile servers are meant for personal use (see
@@ -402,6 +411,8 @@ RouteFlyover/
 ├── index.html          page layout: sidebar controls and the video stage
 ├── vite.config.js      dev/preview server, including the local ffmpeg MP4 endpoint
 ├── wrangler.jsonc      optional Cloudflare Workers hosting (see "Hosting it online")
+├── worker/index.js     hosted site only: shared count of Esri map tiles used this month
+├── migrations/         its database table (Cloudflare D1)
 ├── public/
 │   └── logo.svg        Route Flyover logo
 ├── docs/               README screenshots and animation
@@ -415,6 +426,7 @@ RouteFlyover/
     ├── recorder.js     frame-by-frame video encoder (map + overlay → WebM)
     ├── export.js       MP4 conversion (local ffmpeg, in-browser fallback)
     ├── prefetch.js     map tile prefetching ahead of the camera
+    ├── usage.js        reports this page's Esri tiles; shows renders left this month
     ├── minimap.js      route mini-map for the intro card
     ├── vehicles.js     low-poly 3D rider markers (car, motorcycles, bicycle), rendered with three.js
     ├── stats.js        trip statistics
