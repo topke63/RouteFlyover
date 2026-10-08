@@ -109,6 +109,9 @@ ffmpeg -hide_banner -encoders | grep -E "libx264|aac|h264_nvenc"   # h264_nvenc 
 
 ### Installing the requirements
 
+New to Linux? Follow the **[step-by-step Linux guide](docs/INSTALL-LINUX.md)** (Debian/Ubuntu,
+Fedora, Arch); the short version is below.
+
 **Arch / CachyOS / Manjaro**
 ```bash
 sudo pacman -S nodejs npm ffmpeg
@@ -124,7 +127,10 @@ nvm install --lts
 
 **Fedora**
 ```bash
-sudo dnf install nodejs npm ffmpeg   # ffmpeg with x264 comes from RPM Fusion
+sudo dnf install nodejs npm
+# ffmpeg with libx264 comes from RPM Fusion (Fedora's own ffmpeg-free lacks it):
+sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf swap ffmpeg-free ffmpeg --allowerasing
 ```
 
 **macOS** (with [Homebrew](https://brew.sh))
