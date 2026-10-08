@@ -9,7 +9,7 @@ import '@fontsource/montserrat/600.css';
 import '@fontsource/montserrat/700.css';
 import '@fontsource/montserrat/800.css';
 import '@fontsource/montserrat/800-italic.css';
-import { parseGpx, pointAt } from './gpx.js';
+import { parseGpx, pointAt, findDetours, cutDetours } from './gpx.js';
 import { readPhotos, placePhotos, photoKey } from './photos.js';
 import { tripStats, fmtKm, fmtDuration } from './stats.js';
 import { bearing, destination, haversine, lerpAngle } from './geo.js';
@@ -122,6 +122,8 @@ const map = new maplibregl.Map({
 if (import.meta.env.DEV) Object.assign(window, { map, debug: { get track() { return track; }, get spots() { return spots; }, get anim() { return anim; } } });
 
 let track = null;
+let fullTrack = null;  // the route as loaded; `track` is it minus the detours chosen to cut
+let detours = [];      // out-and-back spurs found in fullTrack: { start, apex, end, cut }
 let allPhotos = [];    // everything that decoded
 let skippedFiles = []; // { name, reason } for files that couldn't be used
 let photos = [];       // the subset placed on the track, sorted by distance
@@ -275,15 +277,16 @@ async function loadFiles(fileList) {
   try {
     if (audio.length) await addMusic(audio);
     if (gpx) {
-      track = parseGpx(await gpx.text());
+      fullTrack = parseGpx(await gpx.text());
+      // Detours are cut right away; untick one in the sidebar to keep it.
+      detours = findDetours(fullTrack).map((d) => ({ ...d, cut: true }));
+      track = cutDetours(fullTrack, detours);
       ui.len.value = suggestedLength(track);
       ui.len.dispatchEvent(new Event('input'));
       if (!ui.title.dataset.edited) ui.title.value = track.name;
       updateSubtitle();
-      if (mapReady) showTrack();
-      minimap = null;
-      const forTrack = track; // ignore the result if the session moved on meanwhile
-      renderMinimap(forTrack).then((c) => { if (track === forTrack) minimap = c; });
+      useTrack(track);
+      renderDetours();
     }
     if (media.length) {
       const known = new Set(allPhotos.map((p) => p.key));
@@ -301,6 +304,53 @@ async function loadFiles(fileList) {
   } catch (err) {
     setStatus(err.message);
   }
+}
+
+function useTrack(t) {
+  track = t;
+  trailDone = -1;
+  if (mapReady) showTrack();
+  minimap = null;
+  const forTrack = track; // ignore the result if the session moved on meanwhile
+  renderMinimap(forTrack).then((c) => { if (track === forTrack) minimap = c; });
+}
+
+// Sidebar list of the route's out-and-back detours, each of which can be cut from the video.
+// Distances refer to the route as loaded, so they don't shift when another detour is cut.
+function renderDetours() {
+  const list = $('detour-list');
+  list.replaceChildren();
+  for (const d of detours) {
+    const li = document.createElement('li');
+    li.className = d.cut ? 'cut' : '';
+    li.innerHTML = '<label><input type="checkbox" /><span><b></b><small></small></span></label><button type="button">Show</button>';
+    li.querySelector('b').textContent = `Turns back at km ${(d.apex / 1000).toFixed(1)}`;
+    li.querySelector('small').textContent = `${fmtKm(d.end - d.start)} there and back, from km ${(d.start / 1000).toFixed(1)}`;
+    const box = li.querySelector('input');
+    box.checked = d.cut;
+    box.title = 'Ticked: left out of the video';
+    box.addEventListener('change', () => {
+      if (render || anim?.recorder) {
+        box.checked = d.cut;
+        setStatus('Wait for the video to finish rendering, or cancel it, before changing the route.');
+        return;
+      }
+      d.cut = box.checked;
+      li.className = d.cut ? 'cut' : '';
+      stopAnimation();
+      useTrack(cutDetours(fullTrack, detours.filter((x) => x.cut)));
+      refreshPhotos();
+    });
+    li.querySelector('button').addEventListener('click', () => {
+      if (!mapReady || anim) return;
+      const part = fullTrack.coords.filter((_, i) => fullTrack.cum[i] >= d.start && fullTrack.cum[i] <= d.end);
+      const lngs = part.map((c) => c[0]), lats = part.map((c) => c[1]);
+      map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 80, pitch: 30, maxZoom: 15, duration: 1200 });
+    });
+    list.append(li);
+  }
+  $('detours-section').hidden = detours.length === 0;
 }
 
 function showTrack() {
@@ -327,7 +377,9 @@ function newSession() {
   clearResult();
   viewer = null;
   for (const p of allPhotos) URL.revokeObjectURL(p.url);
-  track = null;
+  track = fullTrack = null;
+  detours = [];
+  renderDetours();
   allPhotos = [];
   skippedFiles = [];
   photos = [];

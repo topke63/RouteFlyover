@@ -28,6 +28,10 @@ export function parseGpx(text) {
   if (coords.length < 2) throw new Error('GPX track is too short');
 
   fillGaps(ele);
+  return buildTrack(name, coords, ele, time);
+}
+
+function buildTrack(name, coords, ele, time) {
   const hasTime = time.every((t) => t !== null);
 
   const cum = [0];
@@ -48,6 +52,61 @@ export function parseGpx(text) {
     duration: hasTime ? time[time.length - 1] - time[0] : null,
     bounds: [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
   };
+}
+
+// Out-and-back spurs: the route drives down a road, turns around and comes back the same
+// way. Route planners (e.g. Kurviger) make these when a stop sits off the intended road.
+const SPUR_PROBE = 150;   // m either side of a turnaround that must lie on the same road
+const SPUR_MATCH = 60;    // m apart the way out and the way back may be (divided roads)
+const SPUR_STEP = 25;     // m
+const SPUR_GAP = 150;     // m of unmatched road tolerated before the spur is considered over
+const SPUR_MIN = 250;     // m each way; shorter turnarounds aren't listed
+
+// Detours as { start, apex, end } distances (m) along the track, in route order.
+export function findDetours(track) {
+  const at = (d) => pointAt(track, d).lngLat;
+  const detours = [];
+  let d = SPUR_PROBE;
+  while (d <= track.total - SPUR_PROBE) {
+    if (haversine(at(d - SPUR_PROBE), at(d + SPUR_PROBE)) > SPUR_MATCH * 0.6) { d += SPUR_STEP; continue; }
+    // The turnaround is where the way out and the way back are closest.
+    let apex = d, best = Infinity;
+    for (let a = d; a <= Math.min(d + 1000, track.total - SPUR_PROBE); a += SPUR_STEP / 5) {
+      const gap = haversine(at(a - SPUR_PROBE), at(a + SPUR_PROBE));
+      if (gap < best) { best = gap; apex = a; } else if (gap > SPUR_MATCH) break;
+    }
+    // Walk back along the way out, matching each point to the nearest one on the way back.
+    let start = apex, end = apex, fwd = apex, miss = 0;
+    for (let back = apex - SPUR_STEP; back >= 0 && miss < SPUR_GAP; back -= SPUR_STEP) {
+      const p = at(back);
+      let near = Infinity, nearD = fwd;
+      for (let f = fwd; f <= Math.min(fwd + SPUR_GAP + SPUR_STEP * 2, track.total); f += SPUR_STEP / 2.5) {
+        const g = haversine(p, at(f));
+        if (g < near) { near = g; nearD = f; }
+      }
+      if (near < SPUR_MATCH) { start = back; end = fwd = nearD; miss = 0; } else miss += SPUR_STEP;
+    }
+    // A route that is one big out-and-back has nothing left once the spur is cut.
+    const wholeRoute = start <= SPUR_STEP && end >= track.total - SPUR_STEP;
+    if (apex - start >= SPUR_MIN && end - apex >= SPUR_MIN && !wholeRoute) detours.push({ start, apex, end });
+    d = Math.max(end, apex) + SPUR_STEP;
+  }
+  return detours;
+}
+
+// A copy of the track with the given detours left out; the way on joins where each one began.
+export function cutDetours(track, detours) {
+  if (!detours.length) return track;
+  const keep = [];
+  let i = 0;
+  for (const { start, end } of [...detours].sort((a, b) => a.start - b.start)) {
+    const from = segmentAt(track.cum, start), to = segmentAt(track.cum, end) + 1;
+    for (; i <= from; i++) keep.push(i);
+    i = Math.max(i, to);
+  }
+  for (; i < track.coords.length; i++) keep.push(i);
+  const pick = (arr) => keep.map((k) => arr[k]);
+  return buildTrack(track.name, pick(track.coords), pick(track.ele), pick(track.time));
 }
 
 function fillGaps(arr) {
