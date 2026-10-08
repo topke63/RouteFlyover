@@ -134,7 +134,8 @@ brew install node ffmpeg
 
 **Windows**
 Install Node.js LTS from <https://nodejs.org> and ffmpeg (e.g. `winget install Gyan.FFmpeg`),
-and make sure `ffmpeg` is on your `PATH`.
+and make sure `ffmpeg` is on your `PATH`. See the
+**[step-by-step Windows guide](docs/INSTALL-WINDOWS.md)** for details.
 
 ---
 
@@ -210,17 +211,18 @@ each visitor's browser; nothing is uploaded.
    ```bash
    npm run build && npx wrangler deploy
    ```
-6. **Put a login in front of it** with Cloudflare Access (free for up to 50 people): enable Zero
-   Trust in the Cloudflare dashboard, then **Workers & Pages → your Worker → Access → Protect this
-   Worker behind Access → All traffic** with a policy for yourself (*Cloudflare account*) and/or
-   your friends (*Emails*, with **One-time PIN** login).
+6. **Only without an API key: put a login in front of it** with Cloudflare Access (free for up to
+   50 people), because the public Esri tile servers are meant for personal use (see
+   [Map data, fonts and attribution](#map-data-fonts-and-attribution)). Enable Zero Trust in the
+   Cloudflare dashboard, then **Workers & Pages → your Worker → Access → Protect this Worker behind
+   Access → All traffic** with a policy for yourself (*Cloudflare account*) and/or your friends
+   (*Emails*, with **One-time PIN** login).
 7. Set `"workers_dev": true`, deploy again, and open `https://<name>.<your-subdomain>.workers.dev`.
-   It should ask for the login before showing anything.
+   With a key, the site is public; without one, it should ask for the login first.
 
-Without an API key, keep the login: the public Esri tile servers are meant for personal use (see
-[Map data, fonts and attribution](#map-data-fonts-and-attribution)). With a key, imagery and the
-intro mini-map come from Esri's key-based services and count against your account's free
-allowance; when running locally without `.env.local`, the public servers are used as before. Online, MP4 conversion happens in the browser (Chrome yes, Firefox no —
+With a key, imagery and the intro mini-map come from Esri's key-based services and count against
+your account's free allowance; when running locally without `.env.local`, the public servers are
+used as before. Online, MP4 conversion happens in the browser (Chrome yes, Firefox no —
 there it saves WebM), because there's no ffmpeg server.
 
 ---

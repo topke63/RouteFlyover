@@ -21,9 +21,9 @@
       "migrations_dir": "migrations"
     }
   ],
-  // https://route-flyover.topke63.workers.dev — protected by Cloudflare Access (set up in the
-  // dashboard: Workers & Pages → route-flyover → Access → All traffic, "Cloudflare account"
-  // policy). Never enable this for a Worker without that protection.
+  // https://route-flyover.topke63.workers.dev — public. That's fine only when built with an
+  // ArcGIS API key (VITE_ARCGIS_KEY in .env.local); without one, put Cloudflare Access in front
+  // of it (README "Hosting it online"), since the public Esri tile servers are for personal use.
   "workers_dev": true,
   "preview_urls": false
 }
