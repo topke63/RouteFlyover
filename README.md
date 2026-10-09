@@ -110,7 +110,13 @@ ffmpeg -hide_banner -encoders | grep -E "libx264|aac|h264_nvenc"   # h264_nvenc 
 ### Installing the requirements
 
 New to Linux? Follow the **[step-by-step Linux guide](docs/INSTALL-LINUX.md)** (Debian/Ubuntu,
-Fedora, Arch); the short version is below.
+Fedora, Arch); the short version is below. Or let the installer script do everything
+(requirements, download, `npm install`, app-menu entry, start):
+```bash
+curl -fsSL https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-linux.sh | bash
+```
+or run `bash install-linux.sh` in a downloaded copy
+([details](docs/INSTALL-LINUX.md#quick-install-automatic)).
 
 **Arch / CachyOS / Manjaro**
 ```bash

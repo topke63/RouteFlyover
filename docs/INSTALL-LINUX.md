@@ -10,8 +10,61 @@ never uploaded; the only network traffic is fetching public map tiles.
 
 ---
 
+## Quick install (automatic)
+
+The installer script does steps 3 to 9 of this guide for you: it installs Node.js (with nvm on
+Debian / Ubuntu), ffmpeg (from RPM Fusion on Fedora) and Git, skipping what's already installed,
+downloads Route Flyover, runs `npm install`, creates the `start-route-flyover.sh` launcher and a
+**Route Flyover** entry in your app menu, and starts the app in your browser.
+
+**Option 1 — one command.** Open a terminal (see [step 2](#2-open-a-terminal)) and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-linux.sh | bash
+```
+
+If it says `curl: command not found` (Ubuntu doesn't always include it), use `wget` instead:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-linux.sh | bash
+```
+
+Route Flyover is put in `~/RouteFlyover`.
+
+**Option 2 — from a downloaded copy.** If you already have the Route Flyover folder (from the
+ZIP or Git, see [step 5](#5-download-route-flyover)), run this inside it:
+
+```bash
+bash install-linux.sh
+```
+
+It installs into that same folder.
+
+Run it as your normal user, **not** with `sudo`: it asks for your password itself when it
+installs system packages. When the browser opens the app, you're done; next time, start
+**Route Flyover** from your app menu. Running the installer again is safe: it skips what's done
+and, on a Git download, updates Route Flyover to the newest version.
+
+Options (add them after `bash install-linux.sh`, or after `| bash -s --` in the one-command
+version):
+
+| Option | Effect |
+|---|---|
+| `--dir ~/Apps/RouteFlyover` | download Route Flyover to another folder |
+| `--skip-ffmpeg` | don't install ffmpeg (videos are saved as WebM, or converted by Chrome/Chromium) |
+| `--no-launch` | install only, don't start the app |
+
+The script handles Debian, Ubuntu, Fedora, Arch and the distributions based on them. On others
+it installs Node.js with nvm if needed and tells you what to install yourself. If it stops with
+an error, it says what went wrong; the matching step below, or
+[Troubleshooting](#12-troubleshooting-on-linux), has the details. The rest of this guide does
+everything by hand.
+
+---
+
 ## Contents
 
+0. [Quick install (automatic)](#quick-install-automatic)
 1. [What you'll install](#1-what-youll-install)
 2. [Open a terminal](#2-open-a-terminal)
 3. [Install Node.js, ffmpeg and Git](#3-install-nodejs-ffmpeg-and-git)
@@ -295,7 +348,7 @@ other program.
    Exec=$HOME/RouteFlyover/start-route-flyover.sh
    Icon=$HOME/RouteFlyover/public/logo.svg
    Terminal=true
-   Categories=Graphics;Video;
+   Categories=AudioVideo;Video;
    EOF
    ```
 3. Open your app menu and search for **Route Flyover** (it can take a few seconds to appear, or
