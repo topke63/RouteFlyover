@@ -10,6 +10,51 @@ never uploaded; the only network traffic is fetching public map tiles.
 
 ---
 
+## Quick install (automatic)
+
+The installer script does steps 3 to 10 of this guide for you: it installs Homebrew, Node.js
+and ffmpeg, skipping what's already installed, downloads Route Flyover, runs `npm install`,
+creates the `Start Route Flyover.command` launcher, and starts the app in your browser.
+
+**Option 1 — one command.** Open Terminal (see [step 2](#2-open-terminal)) and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-macos.sh | bash
+```
+
+Route Flyover is put in `~/RouteFlyover`.
+
+**Option 2 — from a downloaded copy.** If you already have the Route Flyover folder (from the
+ZIP or Git, see [step 6](#6-download-route-flyover)), run this inside it:
+
+```bash
+bash install-macos.sh
+```
+
+It installs into that same folder.
+
+Run it as your normal user, **not** with `sudo`. If Homebrew isn't installed yet, its installer
+asks for your **Mac login password** (nothing is shown while you type it) and may install
+Apple's Command Line Tools first, which takes a few minutes. When the browser opens the app,
+you're done; next time, double-click **Start Route Flyover.command** in the Route Flyover
+folder. Running the installer again is safe: it skips what's done and, on a Git download,
+updates Route Flyover to the newest version.
+
+Options (add them after `bash install-macos.sh`, or after `| bash -s --` in the one-command
+version):
+
+| Option | Effect |
+|---|---|
+| `--dir ~/Apps/RouteFlyover` | download Route Flyover to another folder |
+| `--skip-ffmpeg` | don't install ffmpeg (videos are saved as WebM, or converted by Chrome) |
+| `--no-launch` | install only, don't start the app |
+
+If it stops with an error, it says what went wrong; the matching step below, or
+[Troubleshooting](#13-troubleshooting-on-macos), has the details. The rest of this guide does
+everything by hand.
+
+---
+
 ## Contents
 
 1. [What you'll install](#1-what-youll-install)

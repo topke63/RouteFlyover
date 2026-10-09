@@ -144,7 +144,13 @@ sudo dnf swap ffmpeg-free ffmpeg --allowerasing
 brew install node ffmpeg
 ```
 New to the Mac Terminal? See the **[step-by-step macOS guide](docs/INSTALL-MAC.md)**
-(Apple Silicon and Intel).
+(Apple Silicon and Intel). Or let the installer script do everything (Homebrew, requirements,
+download, `npm install`, launcher, start):
+```bash
+curl -fsSL https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-macos.sh | bash
+```
+or run `bash install-macos.sh` in a downloaded copy
+([details](docs/INSTALL-MAC.md#quick-install-automatic)).
 
 **Windows**
 Install Node.js LTS from <https://nodejs.org> and ffmpeg (e.g. `winget install Gyan.FFmpeg`),

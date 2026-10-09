@@ -15,3 +15,6 @@ Start Route Flyover.bat
 
 # created by install-linux.sh
 start-route-flyover.sh
+
+# created by install-macos.sh
+Start Route Flyover.command
