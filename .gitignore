@@ -12,3 +12,6 @@ graphify-out/
 
 # created by install-windows.ps1
 Start Route Flyover.bat
+
+# created by install-linux.sh
+start-route-flyover.sh
