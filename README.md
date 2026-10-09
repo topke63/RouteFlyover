@@ -143,7 +143,13 @@ New to the Mac Terminal? See the **[step-by-step macOS guide](docs/INSTALL-MAC.m
 **Windows**
 Install Node.js LTS from <https://nodejs.org> and ffmpeg (e.g. `winget install Gyan.FFmpeg`),
 and make sure `ffmpeg` is on your `PATH`. See the
-**[step-by-step Windows guide](docs/INSTALL-WINDOWS.md)** for details.
+**[step-by-step Windows guide](docs/INSTALL-WINDOWS.md)** for details. Or let the installer
+script do everything (requirements, download, `npm install`, start) from PowerShell:
+```powershell
+irm https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-windows.ps1 | iex
+```
+or double-click `install-windows.bat` in a downloaded copy
+([details](docs/INSTALL-WINDOWS.md#quick-install-automatic)).
 
 ---
 
