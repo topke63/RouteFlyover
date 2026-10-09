@@ -9,8 +9,47 @@ never uploaded; the only network traffic is fetching public map tiles.
 
 ---
 
+## Quick install (automatic)
+
+The installer script does steps 3 to 9 of this guide for you: it installs Node.js and ffmpeg
+with winget (skipping what's already installed), downloads Route Flyover, runs `npm install`,
+creates the `Start Route Flyover.bat` launcher, and starts the app in your browser.
+
+**Option 1 — one command.** Open PowerShell (see [step 2](#2-open-a-terminal)) and paste:
+
+```powershell
+irm https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-windows.ps1 | iex
+```
+
+Route Flyover is put in `C:\Users\YourName\RouteFlyover` (outside OneDrive on most PCs).
+
+**Option 2 — double-click.** If you already have the Route Flyover folder (from the ZIP or Git,
+see [step 5](#5-download-route-flyover)), double-click **`install-windows.bat`** in it. It
+installs into that same folder.
+
+Windows may ask "Do you want to allow this app to make changes?" while Node.js installs —
+click **Yes**. When the browser opens the app, you're done; next time, start it with
+`Start Route Flyover.bat` in the Route Flyover folder. Running the installer again is safe: it
+skips what's done and, on a Git download, updates Route Flyover to the newest version.
+
+Options (add them after `install-windows.bat`, or use
+`powershell -ExecutionPolicy Bypass -File install-windows.ps1 <options>`):
+
+| Option | Effect |
+|---|---|
+| `-InstallDir C:\RouteFlyover` | download Route Flyover to another folder |
+| `-SkipFfmpeg` | don't install ffmpeg (videos are saved as WebM, or converted by Chrome/Edge) |
+| `-NoLaunch` | install only, don't start the app |
+
+If the installer stops with an error, it says what went wrong; the matching step below, or
+[Troubleshooting](#12-troubleshooting-on-windows), has the details. The rest of this guide
+does everything by hand.
+
+---
+
 ## Contents
 
+0. [Quick install (automatic)](#quick-install-automatic)
 1. [What you'll install](#1-what-youll-install)
 2. [Open a terminal](#2-open-a-terminal)
 3. [Install Node.js, ffmpeg and Git](#3-install-nodejs-ffmpeg-and-git)

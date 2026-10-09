@@ -9,3 +9,6 @@ dist/
 .wrangler/
 .env*.local
 graphify-out/
+
+# created by install-windows.ps1
+Start Route Flyover.bat
