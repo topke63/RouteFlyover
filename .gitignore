@@ -18,3 +18,9 @@ start-route-flyover.sh
 
 # created by install-macos.sh
 Start Route Flyover.command
+
+# created by flatpak-builder
+.flatpak-builder/
+flatpak/build-dir/
+flatpak/repo/
+*.flatpak

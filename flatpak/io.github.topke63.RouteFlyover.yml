@@ -1,0 +1,91 @@
+app-id: io.github.topke63.RouteFlyover
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node22
+command: route-flyover
+
+finish-args:
+  # The app is a small local web server; your browser (outside the sandbox) talks to it
+  # on localhost, and it fetches public map tiles.
+  - --share=network
+  # GPU access for the optional NVENC MP4 encoder.
+  - --device=dri
+
+build-options:
+  append-path: /usr/lib/sdk/node22/bin
+
+modules:
+  # H.264 encoder for the MP4 conversion (the runtime's ffmpeg has no libx264).
+  - name: x264
+    config-opts:
+      - --enable-shared
+      - --disable-cli
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/x264.git
+        branch: stable
+        commit: b35605ace3ddf7c1a5d67a2eb553f034aef41d55
+
+  # Headers so ffmpeg can use the NVIDIA hardware encoder when a driver is present.
+  - name: nv-codec-headers
+    buildsystem: simple
+    build-commands:
+      - make install PREFIX=/app
+    sources:
+      - type: git
+        url: https://github.com/FFmpeg/nv-codec-headers.git
+        tag: n13.0.19.1
+        commit: 88fee5c37318c991a8762d423530f91681e32e3a
+
+  - name: ffmpeg
+    config-opts:
+      - --enable-gpl
+      - --enable-libx264
+      - --enable-shared
+      - --disable-static
+      - --disable-doc
+      - --disable-debug
+      - --disable-ffplay
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/ffmpeg/examples
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+        sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+
+  - name: route-flyover
+    buildsystem: simple
+    build-options:
+      build-args:
+        # npm needs the network to fetch dependencies (fine for a local build; a Flathub
+        # submission would use flatpak-node-generator sources instead).
+        - --share=network
+    build-commands:
+      - npm ci --no-audit --no-fund
+      - npm run build
+      # wrangler is only for the optional Cloudflare hosting; vite is kept for `vite preview`.
+      - npm uninstall wrangler --no-audit --no-fund
+      - install -d /app/share/route-flyover
+      - cp -r dist node_modules package.json vite.config.js /app/share/route-flyover/
+      - install -Dm755 /usr/lib/sdk/node22/bin/node /app/bin/node
+      - install -Dm755 route-flyover.sh /app/bin/route-flyover
+      - install -Dm644 public/logo.svg /app/share/icons/hicolor/scalable/apps/io.github.topke63.RouteFlyover.svg
+      - install -Dm644 flatpak/io.github.topke63.RouteFlyover.desktop /app/share/applications/io.github.topke63.RouteFlyover.desktop
+      - install -Dm644 flatpak/io.github.topke63.RouteFlyover.metainfo.xml /app/share/metainfo/io.github.topke63.RouteFlyover.metainfo.xml
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - node_modules
+          - dist
+          - graphify-out
+          - .flatpak-builder
+          - flatpak/build-dir
+          - flatpak/repo
+      - type: file
+        path: route-flyover.sh

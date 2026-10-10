@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Route Flyover
+Comment=Turn a GPX track, photos and music into a 3D fly-over video
+Exec=route-flyover
+Icon=io.github.topke63.RouteFlyover
+Terminal=false
+Categories=Graphics;Video;Maps;
+Keywords=gpx;map;video;flyover;route;
+Actions=quit;
+
+[Desktop Action quit]
+Name=Stop Route Flyover
+Exec=flatpak kill io.github.topke63.RouteFlyover

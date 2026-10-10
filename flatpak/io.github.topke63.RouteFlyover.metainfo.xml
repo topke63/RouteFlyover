@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.topke63.RouteFlyover</id>
+  <name>Route Flyover</name>
+  <summary>Turn a GPX track, photos and music into a 3D fly-over video</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer_name>topke</developer_name>
+  <url type="homepage">https://github.com/topke63/RouteFlyover</url>
+  <url type="bugtracker">https://github.com/topke63/RouteFlyover/issues</url>
+  <description>
+    <p>Drop in a GPX file from your ride, hike or drive, add the photos you took and a few
+    songs, and Route Flyover flies a camera along your route over satellite imagery and 3D
+    terrain, then renders a video ready to share. Everything stays on your computer.</p>
+    <p>The app runs a small local server and opens in your web browser.</p>
+  </description>
+  <launchable type="desktop-id">io.github.topke63.RouteFlyover.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/topke63/RouteFlyover/main/docs/app.jpg</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.2.0" date="2026-10-08"/>
+  </releases>
+</component>
