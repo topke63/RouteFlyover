@@ -34,6 +34,7 @@ from [`samples/`](samples/) onto it — a ride over the Stelvio Pass with three 
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Flatpak (Linux)](#flatpak-linux)
 - [Running Route Flyover](#running-route-flyover)
 - [Hosting it online (optional)](#hosting-it-online-optional)
 - [How to use it](#how-to-use-it)
@@ -163,6 +164,11 @@ irm https://raw.githubusercontent.com/topke63/RouteFlyover/main/install-windows.
 or double-click `install-windows.bat` in a downloaded copy
 ([details](docs/INSTALL-WINDOWS.md#quick-install-automatic)).
 
+> **Note:** I use Linux and don't have a Windows PC or a Mac, so the Windows and macOS install
+> scripts (and their step-by-step guides) haven't been tested on real machines. If something
+> doesn't work, please [open an issue](https://github.com/topke63/RouteFlyover/issues) with the
+> error message, or follow the guide's manual steps instead.
+
 ---
 
 ## Installation
@@ -174,6 +180,25 @@ npm install
 ```
 
 That's all — no API keys or accounts are needed.
+
+---
+
+## Flatpak (Linux)
+
+A self-contained Flatpak bundles Node.js and an ffmpeg with H.264 and NVIDIA NVENC, so nothing
+else needs installing. Download `route-flyover.flatpak` from the
+[latest release](https://github.com/topke63/RouteFlyover/releases/latest), then:
+
+```bash
+flatpak install --user route-flyover.flatpak
+flatpak run io.github.topke63.RouteFlyover   # starts the app and opens http://localhost:4173
+flatpak kill io.github.topke63.RouteFlyover  # stops it
+```
+
+It also appears as "Route Flyover" in your app menu. Your browser does the file handling, so
+the sandbox has no filesystem access.
+
+To build it yourself, see [`flatpak/README.md`](flatpak/README.md).
 
 ---
 
@@ -444,6 +469,7 @@ RouteFlyover/
 ├── public/
 │   └── logo.svg        Route Flyover logo
 ├── docs/               README screenshots and animation
+├── flatpak/            Flatpak manifest, launcher and desktop files
 ├── samples/            demo trip over the Stelvio Pass (GPX + photos, credits)
 └── src/
     ├── main.js         app: map, loading, camera, animation timeline, render flow
