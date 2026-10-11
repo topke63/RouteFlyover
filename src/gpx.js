@@ -2,40 +2,117 @@ import { haversine } from './geo.js';
 
 const child = (el, tag) => el.getElementsByTagName(tag)[0]?.textContent?.trim();
 
+// Track points grouped by <trkseg>, so recorder pauses stay separate from continuous driving.
+function readSegments(doc) {
+  const group = (parents, seg, pt) =>
+    parents.flatMap((p) => (seg ? [...p.getElementsByTagName(seg)] : [p]).map((s) => [...s.getElementsByTagName(pt)]));
+  let segs = group([...doc.getElementsByTagName('trk')], 'trkseg', 'trkpt');
+  if (segs.flat().length < 2) segs = group([...doc.getElementsByTagName('rte')], null, 'rtept');
+  if (segs.flat().length < 2) segs = [[...doc.getElementsByTagName('trkpt')], [...doc.getElementsByTagName('rtept')]];
+  return segs;
+}
+
 export function parseGpx(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('Not a valid GPX/XML file');
 
-  let nodes = [...doc.getElementsByTagName('trkpt')];
-  if (nodes.length < 2) nodes = [...doc.getElementsByTagName('rtept')];
-  if (nodes.length < 2) throw new Error('GPX has no track or route points');
+  const pts = [];
+  readSegments(doc).forEach((nodes, seg) => {
+    for (const n of nodes) {
+      const p = [parseFloat(n.getAttribute('lon')), parseFloat(n.getAttribute('lat'))];
+      if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+      const e = parseFloat(child(n, 'ele'));
+      const t = Date.parse(child(n, 'time') ?? '');
+      pts.push({ p, seg, e: Number.isFinite(e) ? e : null, t: Number.isFinite(t) ? t : null });
+    }
+  });
+  if (pts.length < 2) throw new Error('GPX has no track or route points');
 
   const trk = doc.getElementsByTagName('trk')[0] || doc.getElementsByTagName('rte')[0];
   const name = (trk && child(trk, 'name')) || 'Untitled route';
 
-  const coords = [], ele = [], time = [];
-  for (const n of nodes) {
-    const p = [parseFloat(n.getAttribute('lon')), parseFloat(n.getAttribute('lat'))];
-    if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
+  const coords = [], ele = [], time = [], brk = [];
+  let lastSeg = null;
+  for (const q of dropSpikes(pts)) {
     // Drop near-duplicate points; they create zero-length segments and jittery bearings.
-    if (coords.length && haversine(coords[coords.length - 1], p) < 0.5) continue;
-    coords.push(p);
-    const e = parseFloat(child(n, 'ele'));
-    ele.push(Number.isFinite(e) ? e : null);
-    const t = Date.parse(child(n, 'time') ?? '');
-    time.push(Number.isFinite(t) ? t : null);
+    if (coords.length && haversine(coords[coords.length - 1], q.p) < 0.5) continue;
+    brk.push(coords.length > 0 && q.seg !== lastSeg);
+    lastSeg = q.seg;
+    coords.push(q.p);
+    ele.push(q.e);
+    time.push(q.t);
   }
   if (coords.length < 2) throw new Error('GPX track is too short');
 
   fillGaps(ele);
-  return buildTrack(name, coords, ele, time);
+  const smooth = smoothCoords(coords, brk);
+  return buildTrack(name, smooth, smoothEle(ele, cumulative(smooth, brk)), time, brk);
 }
 
-function buildTrack(name, coords, ele, time) {
-  const hasTime = time.every((t) => t !== null);
+// GPS multipath glitches show up as a point that is far away and reachable only at an
+// impossible speed. Needs timestamps; without them a glitch can't be told from a real spur.
+function dropSpikes(pts) {
+  const speeds = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (a.seg !== b.seg || a.t === null || b.t === null || b.t <= a.t) continue;
+    speeds.push(haversine(a.p, b.p) / ((b.t - a.t) / 1000));
+  }
+  if (speeds.length < 20) return pts;
+  speeds.sort((x, y) => x - y);
+  const limit = Math.max(6 * speeds[speeds.length >> 1], 20); // m/s; the median isn't skewed by the spikes
 
+  const out = [pts[0]];
+  let run = 0; // consecutive drops; a long run means the track really moved, so accept it
+  for (let i = 1; i < pts.length; i++) {
+    const a = out[out.length - 1], b = pts[i];
+    if (a.seg === b.seg && a.t !== null && b.t !== null && run < 5) {
+      const d = haversine(a.p, b.p), dt = (b.t - a.t) / 1000;
+      if (d > 50 && (dt <= 0 || d / dt > limit)) { run++; continue; }
+    }
+    run = 0;
+    out.push(b);
+  }
+  return out;
+}
+
+// Cumulative distance; a jump between two track segments counts for nothing.
+function cumulative(coords, brk) {
   const cum = [0];
-  for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversine(coords[i - 1], coords[i]));
+  for (let i = 1; i < coords.length; i++) {
+    cum.push(cum[i - 1] + (brk[i] ? 0 : haversine(coords[i - 1], coords[i])));
+  }
+  return cum;
+}
+
+// Light 1-2-1 smoothing for jitter on densely sampled stretches. Sparse points (route
+// planners) are real corners, so they are left alone, as are segment boundaries.
+function smoothCoords(coords, brk) {
+  return coords.map((b, i) => {
+    if (i === 0 || i === coords.length - 1 || brk[i] || brk[i + 1]) return b;
+    const a = coords[i - 1], c = coords[i + 1];
+    if (haversine(a, b) > 30 || haversine(b, c) > 30) return b;
+    return [0.25 * a[0] + 0.5 * b[0] + 0.25 * c[0], 0.25 * a[1] + 0.5 * b[1] + 0.25 * c[1]];
+  });
+}
+
+// Moving average over +-half metres of track; GPS altitude is much noisier than position.
+function smoothEle(ele, cum, half = 25) {
+  const n = ele.length, pre = [0];
+  for (const e of ele) pre.push(pre[pre.length - 1] + e);
+  const out = new Array(n);
+  let lo = 0, hi = 0;
+  for (let i = 0; i < n; i++) {
+    while (cum[i] - cum[lo] > half) lo++;
+    while (hi < n - 1 && cum[hi + 1] - cum[i] <= half) hi++;
+    out[i] = (pre[hi + 1] - pre[lo]) / (hi - lo + 1);
+  }
+  return out;
+}
+
+function buildTrack(name, coords, ele, time, brk) {
+  const hasTime = time.every((t) => t !== null);
+  const cum = cumulative(coords, brk);
 
   // Elevation gain/loss with a 3 m hysteresis to ignore GPS noise; gainCum[i] is the climb so far.
   let gain = 0, loss = 0, ref = ele[0];
@@ -47,7 +124,7 @@ function buildTrack(name, coords, ele, time) {
 
   const lngs = coords.map((c) => c[0]), lats = coords.map((c) => c[1]);
   return {
-    name, coords, ele, time, cum, hasTime, gain, loss, gainCum,
+    name, coords, ele, time, brk, cum, hasTime, gain, loss, gainCum,
     total: cum[cum.length - 1],
     duration: hasTime ? time[time.length - 1] - time[0] : null,
     bounds: [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
@@ -106,7 +183,7 @@ export function cutDetours(track, detours) {
   }
   for (; i < track.coords.length; i++) keep.push(i);
   const pick = (arr) => keep.map((k) => arr[k]);
-  return buildTrack(track.name, pick(track.coords), pick(track.ele), pick(track.time));
+  return buildTrack(track.name, pick(track.coords), pick(track.ele), pick(track.time), pick(track.brk));
 }
 
 function fillGaps(arr) {
