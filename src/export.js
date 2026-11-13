@@ -10,19 +10,22 @@ import { Input, BlobSource, ALL_FORMATS, Output, BufferTarget, Mp4OutputFormat, 
 // onProgress(fraction 0–1 or null when unknown, encoder: 'nvenc' | 'x264' | undefined).
 // Rejects with an AbortError if `signal` fires.
 export async function toMp4(blob, onProgress, signal) {
-  let res = null;
-  try {
-    res = await fetch('/api/mp4', { method: 'POST', body: blob, signal });
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    // No local server (static hosting): fall through to the browser.
-  }
-  // Only Route Flyover's own server answers with JSON; anything else (404/405 from static
-  // hosting such as Cloudflare) means there's no converter here.
-  const fromConverter = res?.headers.get('content-type')?.includes('application/json');
-  if (res?.ok && fromConverter) return convertOnServer((await res.json()).id, onProgress, signal);
-  if (fromConverter) throw new Error((await res.json()).error || res.statusText);
-  return toMp4InBrowser(blob, onProgress);
+  // Ask first: on static hosting there is no converter, and the upload would be wasted.
+  if (!(await hasConverter())) return toMp4InBrowser(blob, onProgress);
+  const res = await fetch('/api/mp4', { method: 'POST', body: blob, signal });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return convertOnServer(body.id, onProgress, signal);
+}
+
+// Only Route Flyover's own server answers this with JSON; anything else (404/405 from static
+// hosting such as Cloudflare) means there's no converter here. Asked once per page load.
+let converterProbe = null;
+function hasConverter() {
+  converterProbe ??= fetch('/api/mp4')
+    .then((r) => r.ok && !!r.headers.get('content-type')?.includes('application/json'))
+    .catch(() => false);
+  return converterProbe;
 }
 
 async function convertOnServer(id, onProgress, signal) {
@@ -38,7 +41,7 @@ async function convertOnServer(id, onProgress, signal) {
       if (status.done) break;
     }
     const file = await fetch(`/api/mp4/${id}/file`, { signal });
-    return new Blob([await file.arrayBuffer()], { type: 'video/mp4' });
+    return (await file.blob()).slice(0, undefined, 'video/mp4');
   } finally {
     signal?.removeEventListener('abort', cancel);
   }

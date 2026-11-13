@@ -4,9 +4,10 @@
 // The preview plays it live. A recording is made silently; once its exact length is
 // known, the soundtrack is rendered offline to that length and muxed in (see addSoundtrack).
 import {
-  Input, BlobSource, ALL_FORMATS, EncodedPacketSink, Output, BufferTarget,
+  Input, BlobSource, ALL_FORMATS, EncodedPacketSink, Output,
   WebMOutputFormat, Mp4OutputFormat, EncodedVideoPacketSource, AudioBufferSource, canEncodeAudio,
 } from 'mediabunny';
+import { createTarget } from './scratch.js';
 
 const CROSSFADE = 2;        // s between consecutive songs
 const FADE_IN = 0.6;        // s at the very start
@@ -146,7 +147,9 @@ export async function addSoundtrack(videoBlob, music) {
 
   const mp4 = videoBlob.type.includes('mp4');
   const audioCodec = mp4 && (await canEncodeAudio('aac')) ? 'aac' : 'opus';
-  const output = new Output({ format: mp4 ? new Mp4OutputFormat() : new WebMOutputFormat(), target: new BufferTarget() });
+  const mime = mp4 ? 'video/mp4' : 'video/webm';
+  const scratch = await createTarget(mime);
+  const output = new Output({ format: mp4 ? new Mp4OutputFormat() : new WebMOutputFormat(), target: scratch.target });
   const videoOut = new EncodedVideoPacketSource(video.codec);
   const audioOut = new AudioBufferSource({ codec: audioCodec, bitrate: 192e3 });
   output.addVideoTrack(videoOut);
@@ -173,5 +176,5 @@ export async function addSoundtrack(videoBlob, music) {
   };
   await Promise.all([copyVideo(), addAudio()]);
   await output.finalize();
-  return { blob: new Blob([output.target.buffer], { type: mp4 ? 'video/mp4' : 'video/webm' }), duration };
+  return { blob: await scratch.result(), duration };
 }

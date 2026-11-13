@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 import { spawn } from 'node:child_process';
-import { createReadStream } from 'node:fs';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -68,12 +69,12 @@ function mp4Converter() {
     if (id && !job) return json(res, 404, { error: 'unknown job' });
 
     try {
+      // Cheap probe so the app can tell whether a converter exists before uploading anything.
+      if (!id && req.method === 'GET') return json(res, 200, { ok: true });
       if (!id && req.method === 'POST') {
         const dir = await mkdtemp(join(tmpdir(), 'route-flyover-'));
         const input = join(dir, 'input'), output = join(dir, 'output.mp4');
-        const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
-        await writeFile(input, Buffer.concat(chunks));
+        await pipeline(req, createWriteStream(input));
         const newId = randomUUID();
         const duration = await probeDuration(input);
         const entry = { dir, output, progress: duration ? 0 : null, done: false, error: null, encoder: null };

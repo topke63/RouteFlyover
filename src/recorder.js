@@ -3,7 +3,8 @@
 // Rendering can take as long as it needs (waiting for map tiles, slow machines) — the
 // video still plays back smoothly at FPS with the exact length of the animation timeline.
 // Requires the map to be created with preserveDrawingBuffer: true.
-import { Output, BufferTarget, WebMOutputFormat, CanvasSource } from 'mediabunny';
+import { Output, WebMOutputFormat, CanvasSource } from 'mediabunny';
+import { createTarget, purgeScratch } from './scratch.js';
 
 export const FPS = 30;
 
@@ -19,7 +20,9 @@ export class Recorder {
     // Encoders want even dimensions.
     this.canvas.width = this.source.width & ~1;
     this.canvas.height = this.source.height & ~1;
-    this.output = new Output({ format: new WebMOutputFormat(), target: new BufferTarget() });
+    await purgeScratch();
+    this.scratch = await createTarget('video/webm');
+    this.output = new Output({ format: new WebMOutputFormat(), target: this.scratch.target });
     // VP8: encodes faster than real time at 1080p in every browser; the MP4 export
     // re-encodes to H.264 anyway, so the generous bitrate keeps this intermediate clean.
     // Realtime mode keeps the encoder ahead of the renderer (~20% faster renders in Firefox).
@@ -40,7 +43,7 @@ export class Recorder {
 
   async stop() {
     await this.output.finalize();
-    return { blob: new Blob([this.output.target.buffer], { type: 'video/webm' }), ext: 'webm' };
+    return { blob: await this.scratch.result(), ext: 'webm' };
   }
 
   cancel() {
