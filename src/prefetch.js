@@ -1,16 +1,11 @@
 // Warms the browser HTTP cache with tiles for the stretch of route the camera is about
 // to reach, so MapLibre finds them locally instead of waiting on the network.
 import { pointAt } from './gpx.js';
+import { worldXY, tileUrl } from './geo.js';
 
 const MAX_IN_FLIGHT = 8; // leave most connections free for tiles needed right now
 
-function tileXY([lng, lat], z) {
-  const n = 2 ** z;
-  const x = Math.floor(((lng + 180) / 360) * n);
-  const r = (lat * Math.PI) / 180;
-  const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
-  return [x, y];
-}
+const tileXY = (p, z) => worldXY(p, 2 ** z).map(Math.floor);
 
 export class TilePrefetcher {
   // sources: [{ urls: [...templates], levels: [[zoom, radius in tiles around each point], ...] }]
@@ -33,7 +28,7 @@ export class TilePrefetcher {
               const x = cx + dx, y = cy + dy;
               // Same template choice MapLibre makes, so the cached URL is the one it requests.
               const tpl = src.urls[(x + y) % src.urls.length];
-              const url = tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+              const url = tileUrl(tpl, z, x, y);
               if (this.seen.has(url)) continue;
               this.seen.add(url);
               this.queue.push(url);
@@ -51,7 +46,7 @@ export class TilePrefetcher {
       const [x0, y0] = tileXY([w, n], z), [x1, y1] = tileXY([e, s], z);
       for (let x = x0 - 1; x <= x1 + 1; x++) {
         for (let y = y0 - 1; y <= y1 + 1; y++) {
-          const url = urls[(x + y) % urls.length].replace('{z}', z).replace('{x}', x).replace('{y}', y);
+          const url = tileUrl(urls[(x + y) % urls.length], z, x, y);
           if (!this.seen.has(url)) {
             this.seen.add(url);
             this.queue.push(url);

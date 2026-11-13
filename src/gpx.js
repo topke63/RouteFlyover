@@ -1,4 +1,4 @@
-import { haversine } from './geo.js';
+import { haversine, extent } from './geo.js';
 
 const child = (el, tag) => el.getElementsByTagName(tag)[0]?.textContent?.trim();
 
@@ -12,7 +12,21 @@ function readSegments(doc) {
   return segs;
 }
 
-export function parseGpx(text) {
+// One or more GPX files as a single track: files in time order, each a separate segment so
+// the jump between them isn't treated as driving.
+export function parseGpxFiles(texts) {
+  const files = texts.map(readGpx);
+  files.sort((a, b) => (a.pts.find((q) => q.t !== null)?.t ?? 0) - (b.pts.find((q) => q.t !== null)?.t ?? 0));
+  const pts = [];
+  let offset = 0;
+  for (const f of files) {
+    for (const q of f.pts) pts.push({ ...q, seg: q.seg + offset });
+    offset += extent(f.pts.map((q) => q.seg))[1] + 1;
+  }
+  return trackFromPoints(files[0].name, pts);
+}
+
+function readGpx(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('Not a valid GPX/XML file');
 
@@ -29,11 +43,11 @@ export function parseGpx(text) {
   if (pts.length < 2) throw new Error('GPX has no track or route points');
 
   const trk = doc.getElementsByTagName('trk')[0] || doc.getElementsByTagName('rte')[0];
-  return trackFromPoints((trk && child(trk, 'name')) || 'Untitled route', pts);
+  return { name: (trk && child(trk, 'name')) || 'Untitled route', pts };
 }
 
 // Raw points { p: [lon, lat], seg, e: ele|null, t: ms|null } → cleaned, smoothed track.
-// Split from parseGpx so it can run (and be tested) without a DOM.
+// Split from parseGpxFiles so it can run (and be tested) without a DOM.
 export function trackFromPoints(name, pts) {
   if (pts.length < 2) throw new Error('GPX has no track or route points');
   const coords = [], ele = [], time = [], brk = [];
@@ -115,6 +129,15 @@ function smoothEle(ele, cum, half = 25) {
   return out;
 }
 
+// [[w, s], [e, n]]. A route crossing ±180° gets longitudes shifted past 180 (e.g. 179 → 181)
+// so the box stays small instead of spanning the whole world.
+function boundsOf(lngs, lats) {
+  let [w, e] = extent(lngs);
+  if (e - w > 180) [w, e] = extent(lngs.map((l) => (l < 0 ? l + 360 : l)));
+  const [s, n] = extent(lats);
+  return [[w, s], [e, n]];
+}
+
 function buildTrack(name, coords, ele, time, brk) {
   const hasTime = time.every((t) => t !== null);
   const cum = cumulative(coords, brk);
@@ -132,7 +155,7 @@ function buildTrack(name, coords, ele, time, brk) {
     name, coords, ele, time, brk, cum, hasTime, gain, loss, gainCum,
     total: cum[cum.length - 1],
     duration: hasTime ? time[time.length - 1] - time[0] : null,
-    bounds: [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+    bounds: boundsOf(lngs, lats),
   };
 }
 
@@ -198,7 +221,7 @@ function fillGaps(arr) {
 }
 
 // Index i such that cum[i] <= d < cum[i+1].
-function segmentAt(cum, d) {
+export function segmentAt(cum, d) {
   let lo = 0, hi = cum.length - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
@@ -234,4 +257,24 @@ export function distanceAtTime(track, ms, slackMs = 30 * 60e3) {
   const i = segmentAt(t, ms);
   const span = t[i + 1] - t[i];
   return track.cum[i] + (span > 0 ? ((ms - t[i]) / span) * (track.cum[i + 1] - track.cum[i]) : 0);
+}
+
+// Closest point on the track to lngLat, projected onto the segments (not just the vertices):
+// { dist: metres away, d: distance along the track }. Segments across a recording pause are skipped.
+export function nearestOnTrack(track, lngLat) {
+  const { coords, cum, brk } = track;
+  const k = Math.cos((lngLat[1] * Math.PI) / 180);
+  let best = { dist: Infinity, d: 0 };
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (brk[i + 1]) continue;
+    const a = coords[i], b = coords[i + 1];
+    const ax = (a[0] - lngLat[0]) * k, ay = a[1] - lngLat[1];
+    const dx = (b[0] - a[0]) * k, dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+    const q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    const dist = haversine(q, lngLat);
+    if (dist < best.dist) best = { dist, d: cum[i] + t * (cum[i + 1] - cum[i]) };
+  }
+  return best;
 }

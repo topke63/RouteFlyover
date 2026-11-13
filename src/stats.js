@@ -1,3 +1,4 @@
+import { extent } from './geo.js';
 const MOVING_SPEED = 0.8;   // m/s; slower segments count as stopped
 const MAX_SPEED_WINDOW = 15e3; // ms; max speed is averaged over this to ignore GPS spikes
 
@@ -30,11 +31,12 @@ export function tripStats(track, photoCount) {
     );
   }
 
+  const [lo, hi] = extent(track.ele);
   rows.push(
     ['Climb', `${Math.round(track.gain)} m`],
     ['Descent', `${Math.round(track.loss)} m`],
-    ['Highest point', `${Math.round(Math.max(...track.ele))} m`],
-    ['Lowest point', `${Math.round(Math.min(...track.ele))} m`],
+    ['Highest point', `${Math.round(hi)} m`],
+    ['Lowest point', `${Math.round(lo)} m`],
   );
   if (photoCount) rows.push(['Photos', String(photoCount)]);
   return rows;

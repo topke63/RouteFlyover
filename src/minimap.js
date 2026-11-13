@@ -2,6 +2,8 @@
 // into a square canvas.
 // With an ArcGIS API key: Esri's key-based static basemap tiles (512 px); without: the public
 // World Street Map (256 px). See the satellite source in main.js.
+import { worldXY, tileUrl } from './geo.js';
+
 const ARCGIS_KEY = import.meta.env.VITE_ARCGIS_KEY;
 const TILES = ARCGIS_KEY
   ? `https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/streets/static/tile/{z}/{y}/{x}?token=${encodeURIComponent(ARCGIS_KEY)}`
@@ -10,10 +12,7 @@ const TILE = ARCGIS_KEY ? 512 : 256; // tile size in px
 const SIZE = 512;  // output px
 const PAD = 0.18;  // fraction of the frame left around the route
 
-const worldPx = ([lng, lat], z) => {
-  const s = TILE * 2 ** z, r = (lat * Math.PI) / 180;
-  return [((lng + 180) / 360) * s, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * s];
-};
+const worldPx = (p, z) => worldXY(p, TILE * 2 ** z);
 
 export async function renderMinimap(track) {
   const [[w, s], [e, n]] = track.bounds;
@@ -37,7 +36,7 @@ export async function renderMinimap(track) {
     for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + SIZE) / TILE); ty++) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.src = TILES.replace('{z}', z).replace('{x}', tx).replace('{y}', ty);
+      img.src = tileUrl(TILES, z, tx, ty);
       loads.push(img.decode().then(() => ctx.drawImage(img, tx * TILE - left, ty * TILE - top)).catch(() => {}));
     }
   }

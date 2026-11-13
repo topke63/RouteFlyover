@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { trackFromPoints, findDetours, cutDetours, pointAt, distanceAtTime } from '../src/gpx.js';
-import { haversine, bearing } from '../src/geo.js';
+import { trackFromPoints, findDetours, cutDetours, pointAt, distanceAtTime, nearestOnTrack } from '../src/gpx.js';
+import { haversine, bearing, extent, tileUrl } from '../src/geo.js';
 import { tripStats, fmtKm } from '../src/stats.js';
 
 // Read the sample GPX with a regex so no DOMParser is needed.
@@ -70,4 +70,33 @@ test('stats and formatting', () => {
   assert.ok(rows.Distance.endsWith('km'));
   assert.equal(fmtKm(500), '500 m');
   assert.equal(fmtKm(12345), '12.3 km');
+});
+
+test('extent handles arrays too long for Math.min(...arr)', () => {
+  const big = Array.from({ length: 500_000 }, (_, i) => i - 10);
+  assert.deepEqual(extent(big), [-10, 499_989]);
+});
+
+test('nearestOnTrack projects onto the segment, not the nearest vertex', () => {
+  // Two points 2 km apart; a photo beside the middle is ~1 km along, not at either end.
+  const t = trackFromPoints('s', [
+    { p: [10, 46], seg: 0, e: 0, t: null },
+    { p: [10.0259, 46], seg: 0, e: 0, t: null },
+  ]);
+  const r = nearestOnTrack(t, [10.01295, 46.0001]);
+  assert.ok(Math.abs(r.d - t.total / 2) < 5, `${r.d} vs ${t.total / 2}`);
+  assert.ok(r.dist < 15);
+});
+
+test('route across the antimeridian gets a small bounding box', () => {
+  const t = trackFromPoints('fiji', [
+    { p: [179.9, -17], seg: 0, e: 0, t: null },
+    { p: [-179.9, -17], seg: 0, e: 0, t: null },
+  ]);
+  assert.ok(t.bounds[1][0] - t.bounds[0][0] < 1, JSON.stringify(t.bounds));
+});
+
+test('tileUrl wraps x around the globe', () => {
+  assert.equal(tileUrl('{z}/{x}/{y}', 3, 8, 2), '3/0/2');
+  assert.equal(tileUrl('{z}/{x}/{y}', 3, -1, 2), '3/7/2');
 });

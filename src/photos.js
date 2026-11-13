@@ -1,6 +1,5 @@
 import exifr from 'exifr';
-import { haversine } from './geo.js';
-import { distanceAtTime } from './gpx.js';
+import { distanceAtTime, nearestOnTrack } from './gpx.js';
 
 const VIDEO = /\.(mp4|mov|m4v|avi|mkv|webm|3gp)$/i;
 const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'];
@@ -108,13 +107,9 @@ export function placePhotos(photos, track, offsetHours = 0) {
     p.how = null;
     p.note = '';
     if (p.lngLat) {
-      let best = Infinity, bi = 0;
-      track.coords.forEach((c, i) => {
-        const dist = haversine(c, p.lngLat);
-        if (dist < best) { best = dist; bi = i; }
-      });
+      const { dist: best, d: nearD } = nearestOnTrack(track, p.lngLat);
       if (best < MAX_GPS_DISTANCE) {
-        p.d = track.cum[bi];
+        p.d = nearD;
         p.how = 'gps';
       } else {
         p.note = `Taken ${(best / 1000).toFixed(1)} km away from the track`;

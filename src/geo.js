@@ -29,3 +29,20 @@ export function lerpAngle(a, b, t) {
   const d = ((b - a + 540) % 360) - 180;
   return (a + d * t + 360) % 360;
 }
+
+// [min, max] of an array. Math.min(...arr) throws on very long arrays.
+export function extent(arr) {
+  let lo = Infinity, hi = -Infinity;
+  for (const v of arr) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  return [lo, hi];
+}
+
+// Web Mercator: [lng, lat] → pixel position in a square world `size` px wide.
+export function worldXY([lng, lat], size) {
+  const r = toRad(lat);
+  return [((lng + 180) / 360) * size, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * size];
+}
+
+// Fill a {z}/{x}/{y} tile URL template.
+// x wraps around the globe, so routes past ±180° still get valid tiles.
+export const tileUrl = (tpl, z, x, y) => tpl.replace('{z}', z).replace('{x}', ((x % 2 ** z) + 2 ** z) % 2 ** z).replace('{y}', y);

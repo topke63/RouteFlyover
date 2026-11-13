@@ -9,10 +9,10 @@ import '@fontsource/montserrat/600.css';
 import '@fontsource/montserrat/700.css';
 import '@fontsource/montserrat/800.css';
 import '@fontsource/montserrat/800-italic.css';
-import { parseGpx, pointAt, findDetours, cutDetours } from './gpx.js';
+import { parseGpxFiles, pointAt, findDetours, cutDetours, segmentAt } from './gpx.js';
 import { readPhotos, placePhotos, photoKey } from './photos.js';
 import { tripStats, fmtKm, fmtDuration } from './stats.js';
-import { bearing, destination, haversine, lerpAngle } from './geo.js';
+import { bearing, destination, haversine, lerpAngle, extent } from './geo.js';
 import { Recorder, FPS } from './recorder.js';
 import { initUsage, reportRender } from './usage.js';
 import { TilePrefetcher } from './prefetch.js';
@@ -129,6 +129,7 @@ let skippedFiles = []; // { name, reason } for files that couldn't be used
 let photos = [];       // the subset placed on the track, sorted by distance
 let spots = [];        // photos grouped by place: { d, lngLat, photos }
 let minimap = null;
+let avatarUrl = null; // object URL of avatarImg, revoked when replaced
 let avatarImg = null;  // chosen profile picture; falls back to the first photo
 let anim = null;
 let viewer = null;     // photo opened by clicking a pin while idle: { spot, index }
@@ -147,6 +148,7 @@ map.on('webglcontextlost', async () => {
 
 map.on('load', () => {
   mapReady = true;
+  map.setTerrain({ source: 'terrain', exaggeration: parseFloat(ui.exag.value) }); // may be a restored setting
   // The ridden trail is real geometry, not a gradient over the whole route (whose
   // resolution is too coarse on long routes): a "done" part refreshed now and then plus a
   // short "head" refreshed every frame, so it always ends exactly at the rider.
@@ -272,16 +274,16 @@ async function loadFiles(fileList) {
     return;
   }
   const files = [...fileList];
-  const gpx = files.find((f) => /\.gpx$/i.test(f.name));
+  const gpxFiles = files.filter((f) => /\.gpx$/i.test(f.name));
   const audio = files.filter(isAudio);
   // Everything else goes to the photo reader, which reports what it can't use.
-  const media = files.filter((f) => f !== gpx && !/\.gpx$/i.test(f.name) && !isAudio(f));
+  const media = files.filter((f) => !/\.gpx$/i.test(f.name) && !isAudio(f));
   stopAnimation();
 
   try {
     if (audio.length) await addMusic(audio);
-    if (gpx) {
-      fullTrack = parseGpx(await gpx.text());
+    if (gpxFiles.length) {
+      fullTrack = parseGpxFiles(await Promise.all(gpxFiles.map((f) => f.text())));
       // Detours are cut right away; untick one in the sidebar to keep it.
       detours = findDetours(fullTrack).map((d) => ({ ...d, cut: true }));
       track = cutDetours(fullTrack, detours);
@@ -304,6 +306,7 @@ async function loadFiles(fileList) {
       skippedFiles.push(...skipped);
       setStatus('');
     }
+    if (gpxFiles.length > 1) setStatus(`Joined ${gpxFiles.length} GPX files in time order.`);
     if (track) refreshPhotos();
     else if (media.length) {
       renderPhotoList();
@@ -352,8 +355,8 @@ function renderDetours() {
     li.querySelector('button').addEventListener('click', () => {
       if (!mapReady || anim) return;
       const part = fullTrack.coords.filter((_, i) => fullTrack.cum[i] >= d.start && fullTrack.cum[i] <= d.end);
-      const lngs = part.map((c) => c[0]), lats = part.map((c) => c[1]);
-      map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      const [w, e] = extent(part.map((c) => c[0])), [s, n] = extent(part.map((c) => c[1]));
+      map.fitBounds([[w, s], [e, n]],
         { padding: 80, pitch: 30, maxZoom: 15, duration: 1200 });
     });
     list.append(li);
@@ -855,8 +858,7 @@ let trailDone = -1; // index of the last track point in the "done" trail source
 function setProgress(d) {
   if (!mapReady || !track) return;
   const here = pointAt(track, d);
-  let i = track.cum.findLastIndex((c) => c <= d);
-  if (d >= track.total) i = track.coords.length - 1;
+  const i = d >= track.total ? track.coords.length - 1 : segmentAt(track.cum, d);
   const asLine = (coords) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } });
   // Move the done/head split forward in chunks (or back after a jump) to keep the head short.
   if (i < trailDone || track.cum[i] - track.cum[Math.max(trailDone, 0)] > 2000 || d >= track.total || d === 0) {
@@ -1186,6 +1188,11 @@ $('render-cancel').addEventListener('click', () => (anim?.recorder ? stopAnimati
 $('result-save').addEventListener('click', saveResult);
 $('result-discard').addEventListener('click', clearResult);
 ui.offset.addEventListener('change', () => track && refreshPhotos());
+// Browsers pause drawing in background tabs, which stalls a render; say so instead of hanging.
+document.addEventListener('visibilitychange', () => {
+  if (!anim?.recorder) return;
+  setStatus(document.hidden ? 'Paused — switch back to this tab to continue rendering.' : 'Keep this tab visible while rendering.');
+});
 ui.format.addEventListener('change', () => { stopAnimation(); fitStage(); });
 window.addEventListener('resize', () => { if (!anim?.recorder) fitStage(); });
 
@@ -1204,8 +1211,14 @@ ui.rider.addEventListener('change', () => { ui.rider.dataset.edited = '1'; });
 ui.avatar.addEventListener('change', async () => {
   const file = ui.avatar.files[0];
   if (!file) return;
-  const { photos: [p] } = await readPhotos([file]);
-  avatarImg = p?.img ?? null;
+  try {
+    const { photos: [p] } = await readPhotos([file]);
+    if (avatarUrl) URL.revokeObjectURL(avatarUrl);
+    avatarUrl = p?.url ?? null;
+    avatarImg = p?.img ?? null;
+  } catch (err) {
+    setStatus(`Couldn't use that profile photo: ${err.message}`);
+  }
   renderOverlay(performance.now());
 });
 
@@ -1234,6 +1247,44 @@ ui.musicVol.addEventListener('input', () => {
   $('music-vol-out').textContent = `${ui.musicVol.value}%`;
   music.setVolume(ui.musicVol.value / 100);
 });
+
+// Keyboard access to the photo pins: arrows step through the spots, Esc/Enter closes.
+ui.stage.tabIndex = 0;
+ui.stage.addEventListener('keydown', (e) => {
+  if (!track || anim) return;
+  if (viewer && (e.key === 'Escape' || e.key === 'Enter')) viewer = null;
+  else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && spots.length) {
+    const at = viewer ? spots.indexOf(viewer.spot) : -1;
+    const next = e.key === 'ArrowRight' ? at + 1 : (at < 0 ? spots.length : at) - 1;
+    viewer = { spot: spots[(next + spots.length) % spots.length], index: 0 };
+  } else return;
+  e.preventDefault();
+  renderOverlay(performance.now());
+});
+
+// Remember the settings between visits (not per-trip things like the title or camera offset).
+const SAVED_SETTINGS = ['format', 'save-as', 'cam', 'exag', 'photo-len', 'music-vol', 'activity', 'rider'];
+try {
+  const saved = JSON.parse(localStorage.getItem('route-flyover-settings') || '{}');
+  for (const id of SAVED_SETTINGS) {
+    const el = $(id);
+    if (!(id in saved) || id === 'rider') continue;
+    el.value = saved[id];
+    try { el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input')); } catch { /* map not ready yet; the value is applied when it loads */ }
+  }
+  if (saved.rider && saved.rider !== ui.rider.value) {
+    ui.rider.value = saved.rider;
+    if (ui.rider.value === saved.rider) ui.rider.dataset.edited = '1';
+  }
+} catch { /* no storage */ }
+document.addEventListener('change', saveSettings);
+document.addEventListener('input', saveSettings);
+function saveSettings(e) {
+  if (!SAVED_SETTINGS.includes(e.target.id)) return;
+  try {
+    localStorage.setItem('route-flyover-settings', JSON.stringify(Object.fromEntries(SAVED_SETTINGS.map((id) => [id, $(id).value]))));
+  } catch { /* no storage */ }
+}
 
 fitStage();
 renderMusic();

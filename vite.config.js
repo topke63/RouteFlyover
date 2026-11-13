@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+const MAX_UPLOAD = 4 * 1024 ** 3; // bytes
+const MAX_JOBS = 2;
+
 // Local MP4 conversion with the system ffmpeg: H.264 High, yuv420p, constant 30 fps,
 // AAC 48 kHz, index up front — what Instagram and phones expect. Browsers like Firefox
 // can't encode H.264/AAC themselves, so the local dev/preview server does it.
@@ -72,9 +75,24 @@ function mp4Converter() {
       // Cheap probe so the app can tell whether a converter exists before uploading anything.
       if (!id && req.method === 'GET') return json(res, 200, { ok: true });
       if (!id && req.method === 'POST') {
+        // Matters when the server is exposed on a network (vite --host): cap size and parallel jobs.
+        if (Number(req.headers['content-length']) > MAX_UPLOAD) return json(res, 413, { error: 'video too large to convert' });
+        if ([...jobs.values()].filter((j) => !j.done).length >= MAX_JOBS) return json(res, 429, { error: 'converter busy' });
         const dir = await mkdtemp(join(tmpdir(), 'route-flyover-'));
         const input = join(dir, 'input'), output = join(dir, 'output.mp4');
-        await pipeline(req, createWriteStream(input));
+        try {
+          await pipeline(req, async function* (src) {
+            let size = 0;
+            for await (const chunk of src) {
+              size += chunk.length;
+              if (size > MAX_UPLOAD) throw new Error('video too large to convert');
+              yield chunk;
+            }
+          }, createWriteStream(input));
+        } catch (err) {
+          await rm(dir, { recursive: true, force: true });
+          throw err;
+        }
         const newId = randomUUID();
         const duration = await probeDuration(input);
         const entry = { dir, output, progress: duration ? 0 : null, done: false, error: null, encoder: null };

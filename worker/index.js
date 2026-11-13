@@ -15,6 +15,13 @@ export default {
     const month = new Date().toISOString().slice(0, 7);
 
     if (request.method === 'POST') {
+      // Only the site itself reports usage, and each address only so often.
+      const origin = request.headers.get('origin');
+      if (origin && new URL(origin).host !== new URL(request.url).host) return new Response('Forbidden', { status: 403 });
+      if (env.USAGE_LIMITER) {
+        const { success } = await env.USAGE_LIMITER.limit({ key: request.headers.get('cf-connecting-ip') ?? 'unknown' });
+        if (!success) return new Response('Too many requests', { status: 429 });
+      }
       const body = await request.json().catch(() => null);
       const tiles = Math.round(Number(body?.tiles));
       if (!(tiles > 0 && tiles <= MAX_REPORT)) return new Response('Bad tile count', { status: 400 });

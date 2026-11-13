@@ -8,6 +8,8 @@ const ACCENT_2 = '#ff3d6e';
 const NAVY = 'rgba(13,21,36,0.78)';
 const NAVY_SOLID = '#0d1524';
 const MUTED = 'rgba(255,255,255,0.68)';
+import { extent } from './geo.js';
+
 const FONT = 'Montserrat, system-ui, sans-serif';
 const SHADOW = 'rgba(0,0,0,0.45)';
 
@@ -294,7 +296,7 @@ function drawHud(ctx, w, h, u, f) {
   });
 
   // Elevation profile: ridden part in the accent gradient, the rest faint.
-  const min = Math.min(...track.ele), max = Math.max(...track.ele), range = Math.max(max - min, 30);
+  const [min, max] = extent(track.ele), range = Math.max(max - min, 30);
   const yOf = (e) => r.y + r.h - ((e - min) / range) * r.h * 0.92;
   const path = new Path2D();
   path.moveTo(r.x, r.y + r.h);

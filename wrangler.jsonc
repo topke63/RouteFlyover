@@ -21,6 +21,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Caps how often one address can report usage (see worker/index.js).
+  "ratelimits": [
+    { "name": "USAGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ],
   // https://route-flyover.topke63.workers.dev — public. That's fine only when built with an
   // ArcGIS API key (VITE_ARCGIS_KEY in .env.local); without one, put Cloudflare Access in front
   // of it (README "Hosting it online"), since the public Esri tile servers are for personal use.
