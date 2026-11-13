@@ -267,6 +267,10 @@ function setRecordingResolution(on) {
 // ---------- Loading ----------
 
 async function loadFiles(fileList) {
+  if (render || anim?.recorder) {
+    setStatus('Wait for the video to finish rendering, or cancel it, before adding files.');
+    return;
+  }
   const files = [...fileList];
   const gpx = files.find((f) => /\.gpx$/i.test(f.name));
   const audio = files.filter(isAudio);
@@ -290,7 +294,11 @@ async function loadFiles(fileList) {
     }
     if (media.length) {
       const known = new Set(allPhotos.map((p) => p.key));
-      const fresh = media.filter((f) => !known.has(photoKey(f.name)));
+      const fresh = [];
+      for (const f of media) {
+        if (known.has(photoKey(f.name))) skippedFiles.push({ name: f.name, reason: 'Same name as a photo already added' });
+        else fresh.push(f);
+      }
       const { photos: read, skipped } = await readPhotos(fresh, (i, n) => setStatus(`Reading photo ${i} of ${n}…`));
       allPhotos.push(...read);
       skippedFiles.push(...skipped);
@@ -588,6 +596,7 @@ async function renderFrames(run) {
   // Where the render time goes (dev only, logged when the frames are done): see logRenderTiming.
   const t = run.timing = { started: performance.now(), frames: 0, waitMs: 0, holds: 0, holdMs: 0, drawMs: 0, overlayMs: 0, encodeMs: 0, stepMs: 0 };
   let holding = true;
+  try {
   for (;;) {
     let t0 = performance.now();
     // Not tied to the screen's refresh rate: frames are drawn as fast as the GPU and encoder
@@ -622,6 +631,12 @@ async function renderFrames(run) {
       endAnimation();
       return;
     }
+  }
+  } catch (err) {
+    if (anim !== run) return;
+    console.error(err);
+    stopAnimation();
+    setStatus(`Rendering failed: ${err.message}`);
   }
 }
 
@@ -870,6 +885,8 @@ function startRender() {
     abort: new AbortController(),
   };
   $('render-box').hidden = false;
+  document.body.classList.add('rendering');
+  $('settings').disabled = true;
   for (const b of [ui.play, ui.render]) b.disabled = true;
   renderProgress('frames', 0);
   startAnimation({ record: true });
@@ -936,6 +953,11 @@ async function finishRender(rec) {
     const name = `${(ui.title.value || track.name).replace(/[^\p{L}\p{N}\- ]+/gu, '').trim() || 'route'}.${ext}`;
     showResult(blob, name, (performance.now() - started) / 1000, notes);
     reportRender($('usage'));
+  } catch (err) {
+    if (signal.aborted) return;
+    console.error(err);
+    setRecordingResolution(false);
+    setStatus(`Rendering failed: ${err.message}`);
   } finally {
     if (!signal.aborted) endRender();
   }
@@ -951,6 +973,8 @@ function cancelRender() {
 function endRender() {
   render = null;
   $('render-box').hidden = true;
+  document.body.classList.remove('rendering');
+  $('settings').disabled = false;
   for (const b of [ui.play, ui.render]) b.disabled = !track;
 }
 
@@ -1201,7 +1225,11 @@ ui.photoLen.addEventListener('input', () => {
   renderMusic();
 });
 ui.cam.addEventListener('change', () => { if (anim) anim.cam = CAMERAS[ui.cam.value]; });
-ui.musicFiles.addEventListener('change', () => { addMusic([...ui.musicFiles.files]); ui.musicFiles.value = ''; });
+ui.musicFiles.addEventListener('change', () => {
+  if (render || anim?.recorder) setStatus('Wait for the video to finish rendering, or cancel it, before adding music.');
+  else addMusic([...ui.musicFiles.files]);
+  ui.musicFiles.value = '';
+});
 ui.musicVol.addEventListener('input', () => {
   $('music-vol-out').textContent = `${ui.musicVol.value}%`;
   music.setVolume(ui.musicVol.value / 100);
