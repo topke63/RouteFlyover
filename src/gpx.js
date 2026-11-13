@@ -29,8 +29,13 @@ export function parseGpx(text) {
   if (pts.length < 2) throw new Error('GPX has no track or route points');
 
   const trk = doc.getElementsByTagName('trk')[0] || doc.getElementsByTagName('rte')[0];
-  const name = (trk && child(trk, 'name')) || 'Untitled route';
+  return trackFromPoints((trk && child(trk, 'name')) || 'Untitled route', pts);
+}
 
+// Raw points { p: [lon, lat], seg, e: ele|null, t: ms|null } → cleaned, smoothed track.
+// Split from parseGpx so it can run (and be tested) without a DOM.
+export function trackFromPoints(name, pts) {
+  if (pts.length < 2) throw new Error('GPX has no track or route points');
   const coords = [], ele = [], time = [], brk = [];
   let lastSeg = null;
   for (const q of dropSpikes(pts)) {
